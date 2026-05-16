@@ -17,6 +17,7 @@ from backend.core.config import Settings
 SKILLS_CONTAINER = "skills"
 AUDIT_CONTAINER = "audit"
 USAGE_EVENTS_CONTAINER = "usage_events"
+API_KEYS_CONTAINER = "api_keys"
 USAGE_EVENTS_TTL_SECONDS = 90 * 24 * 60 * 60  # 90 days
 
 
@@ -56,6 +57,11 @@ async def ensure_containers(client: CosmosClient, db_name: str) -> DatabaseProxy
         id=USAGE_EVENTS_CONTAINER,
         partition_key=PartitionKey(path="/skill_id"),
         default_ttl=USAGE_EVENTS_TTL_SECONDS,
+    )
+    # M1 — machine identity.
+    await db.create_container_if_not_exists(
+        id=API_KEYS_CONTAINER,
+        partition_key=PartitionKey(path="/key_id"),
     )
     return db
 

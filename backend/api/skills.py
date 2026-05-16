@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import RedirectResponse
 from redis.asyncio import Redis
 
+from backend.core.auth import Principal, get_principal
 from backend.core.blob import signed_download_url
 from backend.core.config import Settings
 from backend.core.deps import get_redis_client, get_skills_container, settings_dep
@@ -19,6 +20,7 @@ router = APIRouter(prefix="/v1/skills", tags=["catalog"])
 
 @router.get("", response_model=list[SkillListItem])
 async def list_skills(
+    _principal: Principal = Depends(get_principal),
     settings: Settings = Depends(settings_dep),
     skills: ContainerProxy = Depends(get_skills_container),
     redis: Redis = Depends(get_redis_client),
@@ -29,6 +31,7 @@ async def list_skills(
 @router.get("/{skill_id}", response_model=SkillListItem)
 async def get_skill(
     skill_id: str,
+    _principal: Principal = Depends(get_principal),
     settings: Settings = Depends(settings_dep),
     skills: ContainerProxy = Depends(get_skills_container),
     redis: Redis = Depends(get_redis_client),
@@ -60,6 +63,7 @@ async def get_skill(
 @router.get("/{skill_id}/download")
 async def download_skill(
     skill_id: str,
+    _principal: Principal = Depends(get_principal),
     settings: Settings = Depends(settings_dep),
     skills: ContainerProxy = Depends(get_skills_container),
     redis: Redis = Depends(get_redis_client),

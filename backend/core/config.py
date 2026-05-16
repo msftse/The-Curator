@@ -9,6 +9,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -49,7 +50,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     # ---- App ----
-    auth_mode: Literal["stub", "oidc"] = "stub"
+    auth_mode: Literal["stub", "fake_oidc", "oidc", "saml"] = "stub"
     classifier_provider: Literal["stub", "llm"] = "stub"
     max_bundle_bytes: int = 10 * 1024 * 1024
     cors_origins: str = "http://localhost:3000"
@@ -58,6 +59,24 @@ class Settings(BaseSettings):
     # ---- Stub auth role allowlists (comma-separated emails) ----
     manager_emails: str = "manager@org"
     admin_emails: str = "admin@org"
+
+    # ---- OIDC / Entra (M1) ----
+    entra_tenant_id: str = ""
+    entra_client_id: str = ""
+    entra_group_id_admin: str = ""
+    # Optional override for the issuer (defaults to login.microsoftonline.com/{tenant}/v2.0).
+    oidc_issuer: str = ""
+    oidc_jwks_url: str = ""
+    oidc_jwks_cache_ttl_seconds: int = 3600
+
+    # ---- API keys (M1) ----
+    apikey_pepper: str = "dev-pepper-do-not-use-in-prod"
+    apikey_prefix: str = "sh_live_"
+    apikey_cache_ttl_seconds: int = 60
+
+    # ---- Telemetry (M1) ----
+    appinsights_connection_string: str = ""
+    otel_service_role: str = "api"
 
     # ---- Worker tuning ----
     classifier_queue_key: str = "queue:classifier"
@@ -76,6 +95,39 @@ class Settings(BaseSettings):
 
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    def resolved_oidc_issuer(self) -> str:
+        if self.oidc_issuer:
+            return self.oidc_issuer
+        if self.entra_tenant_id:
+            return f"https://login.microsoftonline.com/{self.entra_tenant_id}/v2.0"
+        return ""
+
+    def resolved_oidc_jwks_url(self) -> str:
+        if self.oidc_jwks_url:
+            return self.oidc_jwks_url
+        if self.entra_tenant_id:
+            return f"https://login.microsoftonline.com/{self.entra_tenant_id}/discovery/v2.0/keys"
+        return ""
+
+    @model_validator(mode="after")
+    def _validate_oidc(self) -> Settings:
+        if self.auth_mode == "oidc":
+            missing = [
+                n
+                for n, v in {
+                    "entra_tenant_id": self.entra_tenant_id,
+                    "entra_client_id": self.entra_client_id,
+                    "entra_group_id_admin": self.entra_group_id_admin,
+                }.items()
+                if not v
+            ]
+            if missing:
+                raise ValueError(
+                    f"AUTH_MODE=oidc requires the following settings to be non-empty: "
+                    f"{', '.join(missing)}"
+                )
+        return self
 
 
 @lru_cache(maxsize=1)

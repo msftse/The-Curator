@@ -28,12 +28,12 @@ from backend.services import publish as publish_svc
 
 router = APIRouter(prefix="/v1/admin", tags=["admin"])
 
-_require_manager = require_role("manager")
+_require_admin = require_role("admin")
 
 
 @router.get("/queue", response_model=list[SkillListItem])
 async def review_queue(
-    _user: User = Depends(_require_manager),
+    _user: User = Depends(_require_admin),
     skills: ContainerProxy = Depends(get_skills_container),
 ) -> list[SkillListItem]:
     return await catalog_svc.list_review_queue(skills=skills)
@@ -43,7 +43,7 @@ async def review_queue(
 async def approve_skill(
     skill_id: str,
     _body: ApproveRequest | None = None,
-    user: User = Depends(_require_manager),
+    user: User = Depends(_require_admin),
     settings: Settings = Depends(settings_dep),
     skills: ContainerProxy = Depends(get_skills_container),
     audit: ContainerProxy = Depends(get_audit_container),
@@ -66,7 +66,7 @@ async def approve_skill(
 async def reject_skill(
     skill_id: str,
     body: RejectRequest,
-    user: User = Depends(_require_manager),
+    user: User = Depends(_require_admin),
     skills: ContainerProxy = Depends(get_skills_container),
     audit: ContainerProxy = Depends(get_audit_container),
 ) -> SkillListItem:
@@ -84,7 +84,7 @@ async def reject_skill(
 async def patch_classification(
     skill_id: str,
     patch: ClassificationPatch,
-    user: User = Depends(_require_manager),
+    user: User = Depends(_require_admin),
     skills: ContainerProxy = Depends(get_skills_container),
     audit: ContainerProxy = Depends(get_audit_container),
 ) -> SkillListItem:

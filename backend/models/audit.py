@@ -20,6 +20,9 @@ AuditAction = Literal[
     "unpin",
     "restore",
     "rollback",
+    # M1 — API key lifecycle.
+    "apikey_issue",
+    "apikey_revoke",
 ]
 
 

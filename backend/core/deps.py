@@ -14,6 +14,7 @@ from redis.asyncio import Redis
 
 from backend.core.config import Settings, get_settings
 from backend.core.cosmos import (
+    API_KEYS_CONTAINER,
     AUDIT_CONTAINER,
     SKILLS_CONTAINER,
     USAGE_EVENTS_CONTAINER,
@@ -43,6 +44,10 @@ def get_audit_container(db: DatabaseProxy = Depends(get_db)) -> ContainerProxy:
 
 def get_usage_container(db: DatabaseProxy = Depends(get_db)) -> ContainerProxy:
     return get_container(db, USAGE_EVENTS_CONTAINER)
+
+
+def get_api_keys_container(db: DatabaseProxy = Depends(get_db)) -> ContainerProxy:
+    return get_container(db, API_KEYS_CONTAINER)
 
 
 def settings_dep() -> Settings:

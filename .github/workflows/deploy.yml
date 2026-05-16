@@ -1,0 +1,141 @@
+name: deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: [dev, staging, prod]
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "infra/**"
+      - ".github/workflows/deploy.yml"
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.event.inputs.env || 'dev' }}
+  cancel-in-progress: false
+
+jobs:
+  resolve-env:
+    runs-on: ubuntu-latest
+    outputs:
+      env: ${{ steps.pick.outputs.env }}
+    steps:
+      - id: pick
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "env=${{ github.event.inputs.env }}" >> $GITHUB_OUTPUT
+          else
+            echo "env=dev" >> $GITHUB_OUTPUT
+          fi
+
+  infra:
+    needs: resolve-env
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-env.outputs.env }}
+    env:
+      ENV: ${{ needs.resolve-env.outputs.env }}
+      RG: rg-skillhub-${{ needs.resolve-env.outputs.env }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Azure login (OIDC federated)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Bicep what-if
+        run: |
+          az deployment group what-if \
+            --resource-group "$RG" \
+            --template-file infra/main.bicep \
+            --parameters infra/parameters/$ENV.bicepparam
+      - name: Bicep deploy
+        run: |
+          az deployment group create \
+            --resource-group "$RG" \
+            --template-file infra/main.bicep \
+            --parameters infra/parameters/$ENV.bicepparam \
+            --name "skillhub-$ENV-${{ github.run_number }}"
+
+  backend:
+    needs: [resolve-env, infra]
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-env.outputs.env }}
+    env:
+      ENV: ${{ needs.resolve-env.outputs.env }}
+      RG: rg-skillhub-${{ needs.resolve-env.outputs.env }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install uv + deps
+        run: |
+          pip install uv
+          uv sync
+      - name: Build deployment zip
+        run: |
+          mkdir -p dist
+          uv export --format requirements-txt --no-hashes > requirements.txt
+          zip -r dist/api.zip backend requirements.txt
+      - name: Azure login (OIDC federated)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Deploy API
+        run: |
+          az webapp deploy \
+            --resource-group "$RG" \
+            --name "app-skillhub-$ENV-eastus" \
+            --src-path dist/api.zip \
+            --type zip
+      - name: Deploy worker
+        run: |
+          az webapp deploy \
+            --resource-group "$RG" \
+            --name "worker-skillhub-$ENV-eastus" \
+            --src-path dist/api.zip \
+            --type zip
+
+  frontend:
+    needs: [resolve-env, infra]
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-env.outputs.env }}
+    env:
+      ENV: ${{ needs.resolve-env.outputs.env }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+      - name: Install
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        working-directory: frontend
+        run: pnpm build
+      - name: Deploy to SWA
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.SWA_DEPLOYMENT_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: upload
+          app_location: frontend
+          output_location: .next
+          skip_app_build: true

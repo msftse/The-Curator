@@ -1,0 +1,89 @@
+name: rotate-key
+
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: [dev, staging, prod]
+      secret:
+        description: "Which secret to rotate"
+        required: true
+        type: choice
+        options:
+          - cosmos-key
+          - redis-primary-key
+          - blob-connection-string
+          - apikey-pepper
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: rotate-${{ github.event.inputs.env }}-${{ github.event.inputs.secret }}
+  cancel-in-progress: false
+
+jobs:
+  rotate:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.env }}
+    env:
+      ENV: ${{ github.event.inputs.env }}
+      RG: rg-skillhub-${{ github.event.inputs.env }}
+      KV: kv-skillhub-${{ github.event.inputs.env }}-eastus
+      SECRET: ${{ github.event.inputs.secret }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Azure login (OIDC federated)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Rotate cosmos-key
+        if: env.SECRET == 'cosmos-key'
+        run: |
+          ACCOUNT="cosmos-skillhub-$ENV-eastus"
+          az cosmosdb keys regenerate --name "$ACCOUNT" --resource-group "$RG" --key-kind secondary
+          NEW=$(az cosmosdb keys list --name "$ACCOUNT" --resource-group "$RG" --query secondaryMasterKey -o tsv)
+          az keyvault secret set --vault-name "$KV" --name cosmos-key --value "$NEW" >/dev/null
+          # swap primary→secondary so apps repick on restart
+          az cosmosdb keys regenerate --name "$ACCOUNT" --resource-group "$RG" --key-kind primary
+
+      - name: Rotate redis-primary-key
+        if: env.SECRET == 'redis-primary-key'
+        run: |
+          NAME="redis-skillhub-$ENV-eastus"
+          az redis regenerate-keys --name "$NAME" --resource-group "$RG" --key-type Secondary
+          NEW=$(az redis list-keys --name "$NAME" --resource-group "$RG" --query secondaryKey -o tsv)
+          HOST=$(az redis show --name "$NAME" --resource-group "$RG" --query hostName -o tsv)
+          az keyvault secret set --vault-name "$KV" --name redis-primary-key \
+            --value "rediss://:$NEW@$HOST:6380/0" >/dev/null
+          az redis regenerate-keys --name "$NAME" --resource-group "$RG" --key-type Primary
+
+      - name: Rotate blob-connection-string
+        if: env.SECRET == 'blob-connection-string'
+        run: |
+          NAME=$(echo "stskillhub${ENV}eastus" | tr -d '-' | cut -c1-24)
+          az storage account keys renew --account-name "$NAME" --resource-group "$RG" --key key2
+          NEW=$(az storage account show-connection-string --name "$NAME" --resource-group "$RG" --query connectionString -o tsv)
+          az keyvault secret set --vault-name "$KV" --name blob-connection-string --value "$NEW" >/dev/null
+          az storage account keys renew --account-name "$NAME" --resource-group "$RG" --key key1
+
+      - name: Rotate apikey-pepper
+        if: env.SECRET == 'apikey-pepper'
+        run: |
+          # WARNING: rotating the pepper invalidates ALL existing API keys.
+          # Operators must re-issue keys to every consumer after this runs.
+          NEW=$(openssl rand -hex 32)
+          az keyvault secret set --vault-name "$KV" --name apikey-pepper --value "$NEW" >/dev/null
+          echo "::warning ::apikey-pepper rotated — all existing API keys are now invalid. Re-issue keys to consumers."
+
+      - name: Restart API + worker to pick up new KV references
+        run: |
+          az webapp restart --resource-group "$RG" --name "app-skillhub-$ENV-eastus"
+          az webapp restart --resource-group "$RG" --name "worker-skillhub-$ENV-eastus"

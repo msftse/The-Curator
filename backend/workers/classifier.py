@@ -26,6 +26,7 @@ from backend.core.cosmos import (
 )
 from backend.core.logging import bind, configure_logging, get_logger
 from backend.core.redis import key_cache_item, key_queue_classifier
+from backend.core.telemetry import configure_telemetry
 from backend.models.skill import SkillDoc
 from backend.services import audit as audit_svc
 from backend.services.classifier_stub import make_classifier
@@ -102,6 +103,11 @@ async def run_loop(stop: asyncio.Event | None = None) -> None:
     """Long-running BLPOP loop. `stop` lets tests trigger graceful shutdown."""
     settings = get_settings()
     configure_logging(settings.log_level)
+    # Worker telemetry — never instruments FastAPI (it's not a web app).
+    import os
+
+    os.environ.setdefault("OTEL_SERVICE_ROLE", "worker")
+    configure_telemetry(settings)
 
     from backend.core.redis import get_redis
 

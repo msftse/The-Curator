@@ -20,14 +20,18 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api import admin as admin_router
+from backend.api import api_keys as api_keys_router
 from backend.api import skills as skills_router
 from backend.api import uploads as uploads_router
 from backend.core import blob as blob_core
 from backend.core import cosmos as cosmos_core
+from backend.core.auth import select_provider
 from backend.core.config import get_settings
+from backend.core.cosmos import API_KEYS_CONTAINER, get_container
 from backend.core.errors import register_exception_handlers
 from backend.core.logging import configure_logging, get_logger
 from backend.core.redis import get_redis
+from backend.core.telemetry import configure_telemetry
 from backend.models.api import HealthResponse
 
 log = get_logger(__name__)
@@ -37,6 +41,8 @@ log = get_logger(__name__)
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     configure_logging(settings.log_level)
+    # Telemetry is a no-op when APPLICATIONINSIGHTS_CONNECTION_STRING is unset.
+    configure_telemetry(settings, app=app)
 
     cosmos_client = cosmos_core.get_cosmos_client(settings)
     db = await cosmos_core.ensure_containers(cosmos_client, settings.cosmos_db_name)
@@ -54,8 +60,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.cosmos_db = db
     app.state.redis = redis
     app.state.blob = blob
+    app.state.api_keys_container = get_container(db, API_KEYS_CONTAINER)
+    app.state.identity_provider = select_provider(settings)
 
-    log.info("app_started")
+    log.info("app_started", extra={"auth_mode": settings.auth_mode})
     try:
         yield
     finally:
@@ -86,6 +94,7 @@ def create_app() -> FastAPI:
 
     app.include_router(uploads_router.router)
     app.include_router(admin_router.router)
+    app.include_router(api_keys_router.router)
     app.include_router(skills_router.router)
 
     @app.get("/healthz", response_model=HealthResponse)

@@ -62,6 +62,21 @@ class NotImplementedM0(DomainError):
     http_status = status.HTTP_501_NOT_IMPLEMENTED
 
 
+class InvalidToken(DomainError):
+    error_code = "INVALID_TOKEN"
+    http_status = status.HTTP_401_UNAUTHORIZED
+
+
+class RevokedApiKey(DomainError):
+    error_code = "REVOKED_API_KEY"
+    http_status = status.HTTP_401_UNAUTHORIZED
+
+
+class MissingScope(DomainError):
+    error_code = "MISSING_SCOPE"
+    http_status = status.HTTP_403_FORBIDDEN
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(DomainError)
     async def _domain_handler(_: Request, exc: DomainError) -> JSONResponse:

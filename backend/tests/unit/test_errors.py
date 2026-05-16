@@ -8,8 +8,11 @@ from backend.core.errors import (
     DomainError,
     Forbidden,
     InvalidBundle,
+    InvalidToken,
     LockUnavailable,
+    MissingScope,
     NotImplementedM0,
+    RevokedApiKey,
     SkillNotFound,
     Unauthorized,
 )
@@ -26,6 +29,9 @@ from backend.core.errors import (
         (Forbidden("x"), "FORBIDDEN", 403),
         (Unauthorized("x"), "UNAUTHORIZED", 401),
         (NotImplementedM0("x"), "NOT_IMPLEMENTED_M0", 501),
+        (InvalidToken("x"), "INVALID_TOKEN", 401),
+        (RevokedApiKey("x"), "REVOKED_API_KEY", 401),
+        (MissingScope("x"), "MISSING_SCOPE", 403),
     ],
 )
 def test_error_codes_and_status(exc: DomainError, code: str, status: int):

@@ -1,0 +1,91 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: backend-lint-and-test
+    runs-on: ubuntu-latest
+    services:
+      cosmos:
+        image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:latest
+        ports: ["8081:8081"]
+        env:
+          AZURE_COSMOS_EMULATOR_PARTITION_COUNT: "5"
+          AZURE_COSMOS_EMULATOR_ENABLE_DATA_PERSISTENCE: "false"
+      azurite:
+        image: mcr.microsoft.com/azure-storage/azurite:latest
+        ports: ["10000:10000", "10001:10001", "10002:10002"]
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        run: pip install uv
+      - name: Install Python deps
+        run: uv sync --all-extras
+      - name: Ruff format check
+        run: uv run ruff format --check .
+      - name: Ruff lint
+        run: uv run ruff check .
+      - name: Pyright
+        run: uv run pyright
+      - name: Unit tests
+        run: uv run pytest backend/tests/unit -v
+      - name: Wait for emulators
+        run: |
+          for i in {1..60}; do
+            (echo > /dev/tcp/localhost/8081) >/dev/null 2>&1 && break
+            sleep 2
+          done
+      - name: Integration tests
+        run: uv run pytest backend/tests/integration -v -m integration
+
+  frontend:
+    name: frontend-lint-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+      - name: Install
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        working-directory: frontend
+        run: pnpm lint
+      - name: Typecheck
+        working-directory: frontend
+        run: pnpm typecheck
+      - name: Build
+        working-directory: frontend
+        run: pnpm build
+        env:
+          NEXT_PUBLIC_AUTH_MODE: stub
+
+  bicep:
+    name: bicep-lint-and-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Azure CLI + Bicep
+        run: |
+          curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+          az bicep install
+      - name: Bicep build (syntax + lint)
+        run: az bicep build --file infra/main.bicep
