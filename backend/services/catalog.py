@@ -52,7 +52,7 @@ async def list_approved(
 
     query = "SELECT * FROM c WHERE c.status='approved'"
     items: list[SkillListItem] = []
-    async for raw in skills.query_items(query=query, enable_cross_partition_query=True):
+    async for raw in skills.query_items(query=query):
         items.append(_to_list_item(SkillDoc.model_validate(raw)))
 
     try:
@@ -110,7 +110,7 @@ async def list_my_submissions(
     params = [{"name": "@u", "value": uploader}]
     items: list[SkillListItem] = []
     async for raw in skills.query_items(
-        query=query, parameters=params, enable_cross_partition_query=True
+        query=query, parameters=params
     ):
         items.append(_to_list_item(SkillDoc.model_validate(raw)))
     return items
@@ -123,6 +123,6 @@ async def list_review_queue(
     """Manager view — pending + classified skills awaiting review."""
     query = "SELECT * FROM c WHERE c.status IN ('pending','classified') ORDER BY c.uploaded_at ASC"
     items: list[SkillListItem] = []
-    async for raw in skills.query_items(query=query, enable_cross_partition_query=True):
+    async for raw in skills.query_items(query=query):
         items.append(_to_list_item(SkillDoc.model_validate(raw)))
     return items

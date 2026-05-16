@@ -108,7 +108,11 @@ class OidcIdentityProvider:
             )
         if self._admin_group and self._admin_group in groups or "admin" in app_roles:
             roles.append("admin")
-        return User(email=email, roles=roles)
+        # `oid` is the immutable Entra object id. Prefer it over `sub` which
+        # is per-app-registration. Fall back to `sub` only if `oid` is absent
+        # (some token shapes / B2C flows).
+        oid = claims.get("oid") or claims.get("sub") or None
+        return User(email=email, roles=roles, oid=oid)
 
     async def resolve(self, request: Request) -> User:
         auth = request.headers.get("Authorization", "")

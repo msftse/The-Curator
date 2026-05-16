@@ -43,6 +43,7 @@ async def issue_key(
     return await api_keys_svc.issue(
         body=body,
         actor=user.email,
+        actor_oid=user.oid,
         api_keys=api_keys,
         audit=audit,
         settings=settings,
@@ -68,6 +69,7 @@ async def revoke_key(
     await api_keys_svc.revoke(
         key_id=key_id,
         actor=user.email,
+        actor_oid=user.oid,
         api_keys=api_keys,
         audit=audit,
         redis=redis,

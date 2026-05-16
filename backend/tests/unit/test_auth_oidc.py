@@ -96,6 +96,26 @@ async def test_oidc_happy_path_user_role_only():
     assert user.roles == ["user"]
 
 
+async def test_oidc_populates_oid_from_claim():
+    priv, pub = _keypair()
+    s = _settings()
+    p = _provider_with_pub(priv, pub, s)
+    token = _make_token(priv, s, oid="00000000-0000-0000-0000-deadbeefcafe")
+    req = _FakeRequest({"Authorization": f"Bearer {token}"})
+    user = await p.resolve(req)  # type: ignore[arg-type]
+    assert user.oid == "00000000-0000-0000-0000-deadbeefcafe"
+
+
+async def test_oidc_falls_back_to_sub_when_oid_missing():
+    priv, pub = _keypair()
+    s = _settings()
+    p = _provider_with_pub(priv, pub, s)
+    token = _make_token(priv, s, sub="sub-fallback-id")
+    req = _FakeRequest({"Authorization": f"Bearer {token}"})
+    user = await p.resolve(req)  # type: ignore[arg-type]
+    assert user.oid == "sub-fallback-id"
+
+
 async def test_oidc_admin_group_grants_admin_role():
     priv, pub = _keypair()
     s = _settings()

@@ -13,6 +13,7 @@ from typing import Any
 from azure.cosmos.aio import ContainerProxy
 from azure.storage.blob.aio import BlobServiceClient
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import Response
 from redis.asyncio import Redis
 
 from backend.core.auth import User, require_role
@@ -41,7 +42,12 @@ from backend.core.redis import (
     key_curator_run_lock,
 )
 from backend.models.api import SkillListItem
-from backend.models.curator import CuratorRunRecord, CuratorStatus, RollbackResult
+from backend.models.curator import (
+    CuratorRunRecord,
+    CuratorStatus,
+    RollbackResult,
+    SnapshotListItem,
+)
 from backend.models.review import (
     CuratorReviewRunRecord,
     ReviewListResponse,
@@ -68,6 +74,9 @@ from backend.services import (
 )
 from backend.services import (
     janitor as janitor_svc,
+)
+from backend.services import (
+    snapshot as snapshot_svc,
 )
 from backend.services.cosmos_helpers import replace_with_etag_retry
 from backend.services.llm import LLMProvider
@@ -103,7 +112,7 @@ async def pause(
     redis: Redis = Depends(get_redis_client),
 ) -> CuratorStatus:
     await curator_state_svc.pause(
-        system_state=system_state, audit=audit, redis=redis, actor=user.email
+        system_state=system_state, audit=audit, redis=redis, actor=user.email, actor_oid=user.oid
     )
     return CuratorStatus(paused=True, lock_held=False, schedule_enabled=True)
 
@@ -116,7 +125,7 @@ async def resume(
     redis: Redis = Depends(get_redis_client),
 ) -> CuratorStatus:
     await curator_state_svc.resume(
-        system_state=system_state, audit=audit, redis=redis, actor=user.email
+        system_state=system_state, audit=audit, redis=redis, actor=user.email, actor_oid=user.oid
     )
     return CuratorStatus(paused=False, lock_held=False, schedule_enabled=True)
 
@@ -222,6 +231,7 @@ async def restore_skill(
         skill_id=skill_id,
         action="restore",
         actor=user.email,
+        actor_oid=user.oid,
         before={"status": "archived"},
         after={"status": "approved"},
     )
@@ -238,6 +248,7 @@ async def _flip_pinned(
     skill_id: str,
     pinned: bool,
     actor: str,
+    actor_oid: str | None = None,
     skills: ContainerProxy,
     audit: ContainerProxy,
     redis: Redis,
@@ -272,6 +283,7 @@ async def _flip_pinned(
         skill_id=skill_id,
         action="pin" if pinned else "unpin",
         actor=actor,
+        actor_oid=actor_oid,
         after={"pinned": pinned},
     )
 
@@ -293,6 +305,7 @@ async def pin_skill(
         skill_id=skill_id,
         pinned=True,
         actor=user.email,
+        actor_oid=user.oid,
         skills=skills,
         audit=audit,
         redis=redis,
@@ -312,6 +325,7 @@ async def unpin_skill(
         skill_id=skill_id,
         pinned=False,
         actor=user.email,
+        actor_oid=user.oid,
         skills=skills,
         audit=audit,
         redis=redis,
@@ -362,6 +376,102 @@ async def status_endpoint(
         schedule_enabled=True,
         schedule_next=None,
     )
+
+
+@router.get("/snapshots", response_model=list[SnapshotListItem])
+async def list_snapshots_endpoint(
+    _user: User = Depends(_require_admin),
+    settings: Settings = Depends(settings_dep),
+    blob: BlobServiceClient = Depends(get_blob),
+) -> list[SnapshotListItem]:
+    """List snapshot folders, newest first.
+
+    For each folder under `{blob_snapshots_container}/` (excluding the
+    `_retired/` prefix) read its `manifest.json` for `captured_at` +
+    `skills_count`, and the `skills.tar.gz` blob properties for
+    `size_bytes`. Snapshots missing a manifest are skipped silently —
+    they're either mid-write or operator-created stubs.
+    """
+    names = await snapshot_svc.list_snapshots(blob, settings)
+    container = blob.get_container_client(settings.blob_snapshots_container)
+    items: list[SnapshotListItem] = []
+    for name in names:
+        try:
+            manifest = await snapshot_svc.load_manifest(blob, settings, name)
+        except Exception:  # noqa: BLE001 — best-effort listing
+            continue
+        size_bytes = 0
+        try:
+            tar_client = container.get_blob_client(f"{name}/skills.tar.gz")
+            props = await tar_client.get_blob_properties()
+            size_bytes = int(props.size or 0)
+        except Exception:  # noqa: BLE001 — size is informational
+            size_bytes = 0
+        items.append(
+            SnapshotListItem(
+                name=name,
+                captured_at=manifest.captured_at,
+                skills_count=len(manifest.skills),
+                size_bytes=size_bytes,
+            )
+        )
+    return items
+
+
+@router.get("/runs", response_model=list[CuratorRunRecord])
+async def list_runs_endpoint(
+    limit: int = Query(50, ge=1, le=500),
+    _user: User = Depends(_require_admin),
+    settings: Settings = Depends(settings_dep),
+    blob: BlobServiceClient = Depends(get_blob),
+) -> list[CuratorRunRecord]:
+    """List recent curator runs, newest first.
+
+    Each run lives at `{curator_reports_container}/runs/{run_id}/run.json`.
+    """
+    container = blob.get_container_client(settings.curator_reports_container)
+    prefix = f"{settings.curator_runs_container_prefix}/"
+    names: list[str] = []
+    async for b in container.list_blobs(name_starts_with=prefix):
+        if b.name.endswith("/run.json"):
+            names.append(b.name)
+    # Lexicographic sort works because run_ids are UTC-iso-compact timestamps.
+    names.sort(reverse=True)
+    out: list[CuratorRunRecord] = []
+    for blob_name in names[:limit]:
+        try:
+            client = container.get_blob_client(blob_name)
+            downloader = await client.download_blob()
+            raw = await downloader.readall()
+            out.append(CuratorRunRecord.model_validate(json.loads(raw)))
+        except Exception:  # noqa: BLE001 — skip unreadable run records
+            continue
+    return out
+
+
+@router.get("/runs/{run_id}/report")
+async def get_run_report(
+    run_id: str,
+    _user: User = Depends(_require_admin),
+    settings: Settings = Depends(settings_dep),
+    blob: BlobServiceClient = Depends(get_blob),
+) -> Response:
+    """Return the rendered Markdown report for a curator run."""
+    from backend.core.errors import CuratorRunReportNotFound
+
+    container = blob.get_container_client(settings.curator_reports_container)
+    blob_path = (
+        f"{settings.curator_runs_container_prefix}/{run_id}/REPORT.md"
+    )
+    try:
+        client = container.get_blob_client(blob_path)
+        downloader = await client.download_blob()
+        raw = await downloader.readall()
+    except Exception as exc:  # noqa: BLE001
+        raise CuratorRunReportNotFound(
+            f"report for run {run_id!r} not found"
+        ) from exc
+    return Response(content=raw, media_type="text/markdown; charset=utf-8")
 
 
 @router.post("/janitor")
@@ -435,7 +545,6 @@ async def list_reviews(
     async for raw in review_proposals.query_items(
         query=query,
         parameters=params,
-        enable_cross_partition_query=True,
     ):
         with contextlib.suppress(Exception):
             proposals.append(ReviewProposal.model_validate(raw))

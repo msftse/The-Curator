@@ -40,6 +40,7 @@ async def handle_upload(
     filename: str,
     data: bytes,
     uploader: str,
+    uploader_oid: str | None = None,
     settings: Settings,
     skills: ContainerProxy,
     audit: ContainerProxy,
@@ -89,6 +90,7 @@ async def handle_upload(
         skill_id=skill_id,
         action="upload",
         actor=uploader,
+        actor_oid=uploader_oid,
         after={"status": "pending", "version": version, "doc_id": doc.id},
         metadata={"filename": filename, "size_bytes": len(data)},
     )

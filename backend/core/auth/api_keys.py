@@ -98,7 +98,7 @@ async def _query_by_hash(api_keys: ContainerProxy, hash_hex: str) -> dict[str, A
     # then revocation needs a two-phase write. M1 trade-off: small N, cache
     # absorbs the load.
     async for item in api_keys.query_items(
-        query=query, parameters=params, enable_cross_partition_query=True
+        query=query, parameters=params
     ):
         return item
     return None

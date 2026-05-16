@@ -44,15 +44,26 @@ over from step 5 onwards.
    az group create -n rg-skillhub-dev -l eastus
    ```
 
-2. **Create the Entra App Registration** for human OIDC:
+2. **Create the Entra App Registrations + admin group** (one command):
 
-   - Single tenant, redirect URI `https://<frontend-hostname>/auth/callback`.
-   - Note the `tenant_id`, `client_id`, and create a client secret (store in KV
-     post-deploy under `entra-client-secret`).
-   - Create an Entra group `skillhub-admins-<env>`, note its object id, and put
-     it in `entraGroupIdAdmin`.
-   - Optional but recommended: switch from `groups` to `app roles` to avoid the
-     >150-group claim overflow.
+   ```bash
+   scripts/setup-entra.sh <env> <frontend-hostname>
+   # e.g. scripts/setup-entra.sh dev skillhub-dev.example.com
+   ```
+
+   This provisions:
+   - Backend API registration `skillhub-api-<env>` with scope `access_as_user`
+     on identifier URI `api://skillhub-<env>`, group claims enabled.
+   - Frontend SPA registration `skillhub-spa-<env>` with SPA redirect URIs
+     `https://<frontend-hostname>/auth/callback` and the localhost equivalent,
+     pre-authorized for the backend scope (so MSAL login does not prompt for
+     consent).
+   - Security group `skillhub-admins-<env>` — membership = the `admin` role.
+
+   The script is idempotent and prints a copy-paste block with the IDs to
+   drop into `infra/parameters/<env>.bicepparam` and the SWA env vars.
+   Optional but recommended for >150-group users: switch the registrations
+   to **app roles** afterwards to dodge the `groups` claim overflow.
 
 3. **Set up GitHub federated credentials** so the deploy workflow can `az login`
    without a stored client secret:

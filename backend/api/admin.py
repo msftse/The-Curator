@@ -53,6 +53,7 @@ async def approve_skill(
     doc = await publish_svc.publish(
         skill_id=skill_id,
         actor=user.email,
+        actor_oid=user.oid,
         settings=settings,
         skills=skills,
         audit=audit,
@@ -73,6 +74,7 @@ async def reject_skill(
     doc = await publish_svc.reject(
         skill_id=skill_id,
         actor=user.email,
+        actor_oid=user.oid,
         reason=body.reason,
         skills=skills,
         audit=audit,
@@ -92,6 +94,7 @@ async def patch_classification(
         skill_id=skill_id,
         patch=patch,
         actor=user.email,
+        actor_oid=user.oid,
         skills=skills,
         audit=audit,
     )

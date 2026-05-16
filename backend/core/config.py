@@ -36,21 +36,57 @@ class Settings(BaseSettings):
     cosmos_verify_tls: bool = False
 
     # ---- Blob (Azurite by default) ----
+    # Two auth modes:
+    #   1. Connection string (Azurite / shared-key) — set BLOB_CONNECTION_STRING,
+    #      leave BLOB_ACCOUNT_URL empty.
+    #   2. Managed Identity / az login — set BLOB_ACCOUNT_URL
+    #      (e.g. https://<account>.blob.core.windows.net). DefaultAzureCredential
+    #      is used, which picks up `az login`, env vars, managed identity, etc.
+    #      In this mode signed downloads use user-delegation SAS (no account key).
     blob_connection_string: str = (
         "DefaultEndpointsProtocol=http;"
         "AccountName=devstoreaccount1;"
         "AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
         "BlobEndpoint=http://localhost:10000/devstoreaccount1;"
     )
+    blob_account_url: str = ""
     blob_published_container: str = "published"
     blob_archive_container: str = "archive"
     blob_snapshots_container: str = "snapshots"
 
+    def use_blob_identity(self) -> bool:
+        """True when the blob client should authenticate via DefaultAzureCredential."""
+        return bool(self.blob_account_url)
+
     # ---- Redis ----
+    # Two auth modes:
+    #   1. URL-based (default): credentials embedded in REDIS_URL.
+    #      - Local:  redis://localhost:6379/0
+    #      - Azure access key:  rediss://:<KEY>@<name>.redis.cache.windows.net:6380/0
+    #   2. Entra ID: set REDIS_USE_ENTRA=true and REDIS_HOST. The backend mints
+    #      a short-lived AAD token via DefaultAzureCredential (picks up
+    #      `az login` locally, Managed Identity in Azure) and uses it as the
+    #      Redis password. REDIS_ENTRA_USERNAME should be the object id (oid)
+    #      of the principal (user / managed identity / service principal) that
+    #      has the "Data Owner"/"Data Contributor" Redis access policy.
     redis_url: str = "redis://localhost:6379/0"
+    redis_use_entra: bool = False
+    redis_host: str = ""
+    redis_port: int = 6380
+    redis_db: int = 0
+    redis_ssl: bool = True
+    redis_entra_username: str = ""
+    # AAD scope for Azure Cache for Redis.
+    redis_entra_scope: str = "https://redis.azure.com/.default"
 
     # ---- App ----
+    # `stub` is only legal when `local_dev=True` (or unit tests). `fake_oidc`
+    # remains for local-dev OIDC exercise without a real tenant. Production
+    # MUST run `oidc`.
     auth_mode: Literal["stub", "fake_oidc", "oidc", "saml"] = "stub"
+    # When true, relaxes prod safety checks (e.g. allows AUTH_MODE=stub /
+    # fake_oidc). Set in .env.local; never set in cloud env.
+    local_dev: bool = False
     classifier_provider: Literal["stub", "llm"] = "stub"
     max_bundle_bytes: int = 10 * 1024 * 1024
     cors_origins: str = "http://localhost:3000"
@@ -104,8 +140,8 @@ class Settings(BaseSettings):
     curator_review_provider: Literal["foundry", "fake"] = "foundry"
 
     # Azure AI Foundry endpoint config.
-    foundry_endpoint: str = ""             # e.g. "https://my-foundry.services.ai.azure.com/models"
-    foundry_deployment: str = ""           # deployment name or model id
+    foundry_endpoint: str = ""  # e.g. "https://my-foundry.services.ai.azure.com/models"
+    foundry_deployment: str = ""  # deployment name or model id
     foundry_api_version: str = "2024-08-01-preview"
 
     # Auth: prefer Managed Identity in Azure; fall back to API key for local dev only.
@@ -172,6 +208,22 @@ class Settings(BaseSettings):
                     f"{', '.join(missing)}"
                 )
         return self
+
+    def enforce_production_safety(self) -> None:
+        """Refuse insecure auth modes outside local dev.
+
+        Called from `app.py` startup. Unit tests instantiate `Settings`
+        directly and never reach this code path, so test fixtures still
+        work with `auth_mode="stub"` and `local_dev=False`. Production
+        boot will fail loudly if someone sets `AUTH_MODE=stub` without
+        also opting into `LOCAL_DEV=1`.
+        """
+        if self.auth_mode in {"stub", "fake_oidc"} and not self.local_dev:
+            raise RuntimeError(
+                f"AUTH_MODE={self.auth_mode!r} is only permitted when "
+                f"LOCAL_DEV=1. Refusing to start in an insecure auth mode. "
+                f"Set AUTH_MODE=oidc for production."
+            )
 
 
 @lru_cache(maxsize=1)

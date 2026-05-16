@@ -51,7 +51,7 @@ async def janitor_classifier_queue(
     scanned = 0
     requeued = 0
     async for raw in skills.query_items(
-        query=query, parameters=params, enable_cross_partition_query=True
+        query=query, parameters=params
     ):
         scanned += 1
         doc_id = raw.get("id")

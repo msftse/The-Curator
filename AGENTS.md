@@ -111,11 +111,112 @@ The entire system must run on local emulators with **zero Azure spend**. This is
 
 - `docker-compose.yml` brings up: Cosmos DB emulator + Azurite (Blob) + `redis:7`.
 - `.env.local` is the single source of dev config, consumed by backend and compose.
-- `AUTH_MODE=stub` (default for local) uses an `X-User-Email` header instead of OIDC.
+- `AUTH_MODE` selects the identity provider. Two modes are supported locally
+  (see §6a for the full contract):
+  - `AUTH_MODE=stub` — `X-User-Email` header. Zero external dependencies.
+  - `AUTH_MODE=oidc` — real Entra ID. Requires `scripts/setup-entra.sh` to
+    have provisioned the tenant.
+  Both modes require `LOCAL_DEV=1`. Production deployments use `oidc` with
+  `LOCAL_DEV=false`; `Settings.enforce_production_safety()` refuses to boot
+  if a non-oidc mode is selected without `LOCAL_DEV=1`.
 - Background workers run as a local Python process in dev; Azure Functions only in prod.
 - New features MUST be demoable end-to-end on the local stack before being considered done.
 
 If a change can only be verified against real Azure, it is not M0/M1-ready.
+
+---
+
+## 6a. Auth: stub vs Entra OIDC
+
+The hub authenticates humans against **Entra ID (OIDC, authorization-code +
+PKCE redirect flow)**. The admin role is sourced from membership in an Entra
+security group; there is no in-app role admin UI. Agents authenticate with
+API keys (`sh_live_…`), unchanged from M0.
+
+### Modes
+
+| `AUTH_MODE`  | Frontend                                 | Backend                                                              | Allowed when             |
+| ------------ | ---------------------------------------- | -------------------------------------------------------------------- | ------------------------ |
+| `stub`       | `X-User-Email` header from localStorage   | reads `X-User-Email`, role from `MANAGER_EMAILS`/`ADMIN_EMAILS`      | `LOCAL_DEV=1` only       |
+| `fake_oidc`  | n/a (tests only)                          | validates a self-signed RS256 JWT minted by the test harness         | `LOCAL_DEV=1` only       |
+| `oidc`       | MSAL `loginRedirect`, Bearer on every fetch | validates Entra JWTs via JWKS, `iss=v2`, `aud=ENTRA_CLIENT_ID`     | always (the only prod mode) |
+
+### Required env vars in `oidc` mode
+
+Backend (`.env.local` for dev, app settings for prod):
+
+```
+AUTH_MODE=oidc
+ENTRA_TENANT_ID=<tenant guid>
+ENTRA_CLIENT_ID=<API app guid>          # the audience the backend accepts
+ENTRA_GROUP_ID_ADMIN=<group object id>  # admin role source
+```
+
+Frontend (`frontend/.env.local` for dev, SWA app settings for prod — these
+are baked at build time):
+
+```
+NEXT_PUBLIC_AUTH_MODE=oidc
+NEXT_PUBLIC_ENTRA_TENANT_ID=<tenant guid>
+NEXT_PUBLIC_ENTRA_CLIENT_ID=<SPA app guid>          # different from backend's
+NEXT_PUBLIC_ENTRA_API_SCOPE=api://<API app guid>/access_as_user
+NEXT_PUBLIC_API_BASE=https://<api hostname>
+```
+
+### Provisioning the Entra side
+
+`scripts/setup-entra.sh <env> [<frontend-hostname>]` is idempotent and
+creates three artifacts in the signed-in tenant:
+
+1. Backend API app reg `skillhub-api-<env>` — exposes scope
+   `access_as_user`, identifier URI `api://<api-app-id>` (the app-id form
+   is required by some tenant policies), `requestedAccessTokenVersion=2`,
+   group claims as `SecurityGroup`.
+2. Frontend SPA app reg `skillhub-spa-<env>` — SPA redirect URI
+   `<frontend>/auth/callback` + `http://localhost:3000/auth/callback`,
+   pre-authorized for the backend scope so users don't see a consent prompt.
+3. Security group `skillhub-admins-<env>` — membership = `admin` role.
+
+Run for the second arg `localhost` (or `-`) to skip the production redirect
+and register localhost only — handy for first-time local smoke.
+
+After provisioning, add yourself (or operators) to the admin group:
+
+```
+az ad group member add --group <group-id> --member-id <user-oid>
+```
+
+### How the backend maps Entra claims to `User`
+
+`OidcIdentityProvider._claims_to_user` in
+`backend/core/auth/providers/oidc.py`:
+
+- `email`        ← `preferred_username` (Entra upn), lowercased.
+- `oid`          ← `oid` claim, falling back to `sub`. Audited as `actor_oid`.
+- `roles`        ← `["admin"]` if `ENTRA_GROUP_ID_ADMIN` is in the `groups`
+  claim, else `["user"]`.
+
+The `groups` claim is emitted because we set `groupMembershipClaims=SecurityGroup`
+on both app regs. Users in **more than 200 groups** get a `_claim_names`
+reference instead — not handled today, documented in `docs/PRD.md` §7 as a
+known limit. Fix when a user actually hits it.
+
+### Audit
+
+Every state transition still writes to the Cosmos `audit` container. With
+Entra on, the audit record carries both `actor` (the upn email, for human
+readability) and `actor_oid` (the immutable Entra object id). Group-membership
+changes themselves are audited by Entra, not by the hub.
+
+First admin access per UTC-day is recorded as `admin_session_start` via a
+Redis `SETNX admin_seen:{oid|email} EX 86400` lock — gives us a "who is
+admin today" trail without writing on every admin request.
+
+### The four non-negotiable Redis rules (§4) still apply.
+
+The admin-session lock is the only new Redis write added by this migration.
+It tolerates Redis being down (the SETNX is wrapped in `try/except` — failure
+silently skips the audit, the request still serves).
 
 ---
 

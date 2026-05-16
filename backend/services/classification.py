@@ -15,6 +15,7 @@ async def apply_classification_patch(
     skill_id: str,
     patch: ClassificationPatch,
     actor: str,
+    actor_oid: str | None = None,
     skills: ContainerProxy,
     audit: ContainerProxy,
 ) -> SkillDoc:
@@ -35,6 +36,7 @@ async def apply_classification_patch(
         skill_id=skill_id,
         action="classify",
         actor=actor,
+        actor_oid=actor_oid,
         before={"classification": before},
         after={"classification": merged.model_dump(mode="json")},
         metadata={"source": "manager_override"},

@@ -167,7 +167,6 @@ async def _load_candidates(
     async for raw in skills.query_items(
         query=query,
         parameters=params,
-        enable_cross_partition_query=True,
     ):
         out.append(raw)
     return out

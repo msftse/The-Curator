@@ -37,6 +37,7 @@ async def publish(
     *,
     skill_id: str,
     actor: str,
+    actor_oid: str | None = None,
     settings: Settings,
     skills: ContainerProxy,
     audit: ContainerProxy,
@@ -92,13 +93,20 @@ async def publish(
         # 2. Audit (two rows — approve + publish — both reference the same actor).
         after = {"status": "approved", "version": doc.version, "checksum": checksum}
         await audit_svc.record(
-            audit, skill_id=skill_id, action="approve", actor=actor, before=before, after=after
+            audit,
+            skill_id=skill_id,
+            action="approve",
+            actor=actor,
+            actor_oid=actor_oid,
+            before=before,
+            after=after,
         )
         await audit_svc.record(
             audit,
             skill_id=skill_id,
             action="publish",
             actor=actor,
+            actor_oid=actor_oid,
             after={"blob_url": blob_url, "checksum": checksum, "size_bytes": len(tar_bytes)},
         )
 
@@ -115,6 +123,7 @@ async def reject(
     *,
     skill_id: str,
     actor: str,
+    actor_oid: str | None = None,
     reason: str,
     skills: ContainerProxy,
     audit: ContainerProxy,
@@ -134,6 +143,7 @@ async def reject(
         skill_id=skill_id,
         action="reject",
         actor=actor,
+        actor_oid=actor_oid,
         before=before,
         after={"status": "rejected"},
         metadata={"reason": reason},

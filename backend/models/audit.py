@@ -31,6 +31,8 @@ AuditAction = Literal[
     "merge_apply",
     "review_run",
     "review_reject",
+    # Entra migration — first observed admin sign-in per day (Redis SETNX, 24h TTL).
+    "admin_session_start",
 ]
 
 
@@ -43,6 +45,11 @@ class AuditRecord(BaseModel):
     skill_id: str
     action: AuditAction
     actor: str
+    # Immutable Entra `oid` of the human actor when available. `None` for
+    # `system:*` actors and stub-mode requests. Emails can be renamed by
+    # tenant admins; oids cannot, so audits keyed on `actor_oid` survive
+    # email churn.
+    actor_oid: str | None = None
     at: datetime = Field(default_factory=_utc_now)
     before: dict[str, Any] | None = None
     after: dict[str, Any] | None = None

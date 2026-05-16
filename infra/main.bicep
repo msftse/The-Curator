@@ -4,6 +4,11 @@
 // Worker App Service, Static Web App, and RBAC role assignments. All secrets
 // flow through Key Vault references — zero raw secret values in appSettings
 // (AGENTS.md §8 + plan §5).
+//
+// `deployScope`:
+//   - `data` deploys ONLY Cosmos, Storage, Redis. Use for early iteration
+//     when the app tier isn't ready yet.
+//   - `all`  deploys the full footprint (default for staging/prod).
 
 @description('Environment short name (dev|staging|prod).')
 @allowed([
@@ -12,6 +17,13 @@
   'prod'
 ])
 param env string
+
+@description('Deployment scope. `data` = Cosmos+Storage+Redis only; `all` = full footprint.')
+@allowed([
+  'data'
+  'all'
+])
+param deployScope string = 'all'
 
 @description('Azure region.')
 param location string = resourceGroup().location
@@ -54,16 +66,20 @@ param authMode string = 'oidc'
 @description('Entra tenant ID (required when authMode=oidc).')
 param entraTenantId string = ''
 
-@description('Entra app client ID.')
+@description('Entra app client ID for the backend API registration.')
 param entraClientId string = ''
+
+@description('Entra app client ID for the frontend SPA registration. Surfaced as a SWA app setting (NEXT_PUBLIC_ENTRA_CLIENT_ID).')
+param entraSpaClientId string = ''
 
 @description('Entra group ID for admin role.')
 param entraGroupIdAdmin string = ''
 
 var prefix = '${env}-${location}'
 var fullPrefix = 'skillhub-${prefix}'
+var deployAll = deployScope == 'all'
 
-module appi 'modules/appinsights.bicep' = {
+module appi 'modules/appinsights.bicep' = if (deployAll) {
   name: 'appi'
   params: {
     prefix: fullPrefix
@@ -100,7 +116,7 @@ module redis 'modules/redis.bicep' = {
   }
 }
 
-module kv 'modules/keyvault.bicep' = {
+module kv 'modules/keyvault.bicep' = if (deployAll) {
   name: 'kv'
   params: {
     prefix: fullPrefix
@@ -109,7 +125,7 @@ module kv 'modules/keyvault.bicep' = {
   }
 }
 
-module api 'modules/appservice.bicep' = {
+module api 'modules/appservice.bicep' = if (deployAll) {
   name: 'api'
   params: {
     prefix: fullPrefix
@@ -117,8 +133,8 @@ module api 'modules/appservice.bicep' = {
     skuName: appSkuName
     cosmosEndpoint: cosmos.outputs.endpoint
     cosmosDbName: cosmos.outputs.databaseName
-    keyVaultUri: kv.outputs.vaultUri
-    appInsightsConnectionString: appi.outputs.connectionString
+    keyVaultUri: kv!.outputs.vaultUri
+    appInsightsConnectionString: appi!.outputs.connectionString
     authMode: authMode
     entraTenantId: entraTenantId
     entraClientId: entraClientId
@@ -127,20 +143,20 @@ module api 'modules/appservice.bicep' = {
 }
 
 // Worker reuses the API plan id (cheaper in non-prod).
-module worker 'modules/worker.bicep' = {
+module worker 'modules/worker.bicep' = if (deployAll) {
   name: 'worker'
   params: {
     prefix: fullPrefix
     location: location
-    appServicePlanId: api.outputs.planId
+    appServicePlanId: api!.outputs.planId
     cosmosEndpoint: cosmos.outputs.endpoint
     cosmosDbName: cosmos.outputs.databaseName
-    keyVaultUri: kv.outputs.vaultUri
-    appInsightsConnectionString: appi.outputs.connectionString
+    keyVaultUri: kv!.outputs.vaultUri
+    appInsightsConnectionString: appi!.outputs.connectionString
   }
 }
 
-module swa 'modules/staticwebapp.bicep' = {
+module swa 'modules/staticwebapp.bicep' = if (deployAll) {
   name: 'swa'
   params: {
     prefix: fullPrefix
@@ -148,25 +164,28 @@ module swa 'modules/staticwebapp.bicep' = {
   }
 }
 
-module rbac 'modules/rbac.bicep' = {
+module rbac 'modules/rbac.bicep' = if (deployAll) {
   name: 'rbac'
   params: {
     prefix: fullPrefix
-    keyVaultName: kv.outputs.vaultName
+    keyVaultName: kv!.outputs.vaultName
     cosmosAccountName: cosmos.outputs.accountName
     storageAccountName: storage.outputs.accountName
     assignCosmosDataPlane: env == 'prod'
     principalIds: [
-      api.outputs.principalId
-      worker.outputs.principalId
+      api!.outputs.principalId
+      worker!.outputs.principalId
     ]
   }
 }
 
-output apiHostname string = api.outputs.defaultHostName
-output workerSite string = worker.outputs.siteName
-output frontendHostname string = swa.outputs.defaultHostname
-output keyVaultName string = kv.outputs.vaultName
+output apiHostname string = deployAll ? api!.outputs.defaultHostName : ''
+output workerSite string = deployAll ? worker!.outputs.siteName : ''
+output frontendHostname string = deployAll ? swa!.outputs.defaultHostname : ''
+output keyVaultName string = deployAll ? kv!.outputs.vaultName : ''
 output cosmosAccount string = cosmos.outputs.accountName
 output storageAccount string = storage.outputs.accountName
-output appInsightsName string = appi.outputs.appInsightsName
+// Surfaced so the SWA deploy workflow can wire NEXT_PUBLIC_ENTRA_CLIENT_ID
+// without re-reading the bicepparam file.
+output entraSpaClientId string = entraSpaClientId
+output appInsightsName string = deployAll ? appi!.outputs.appInsightsName : ''

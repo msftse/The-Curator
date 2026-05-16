@@ -61,6 +61,9 @@ resource site 'Microsoft.Web/sites@2023-12-01' = {
   name: siteName
   location: location
   kind: 'app,linux'
+  tags: {
+    'azd-service-name': 'api'
+  }
   identity: {
     type: 'SystemAssigned'
   }
@@ -72,6 +75,7 @@ resource site 'Microsoft.Web/sites@2023-12-01' = {
       alwaysOn: true
       ftpsState: 'Disabled'
       minTlsVersion: '1.2'
+      appCommandLine: 'uvicorn backend.app:create_app --factory --host 0.0.0.0 --port 8000'
       appSettings: [
         {
           name: 'WEBSITES_PORT'
@@ -112,6 +116,12 @@ resource site 'Microsoft.Web/sites@2023-12-01' = {
         {
           name: 'AUTH_MODE'
           value: authMode
+        }
+        {
+          // Explicit `false` in cloud — the backend refuses to boot if
+          // AUTH_MODE in {stub, fake_oidc} unless LOCAL_DEV is truthy.
+          name: 'LOCAL_DEV'
+          value: 'false'
         }
         {
           name: 'ENTRA_TENANT_ID'

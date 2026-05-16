@@ -22,8 +22,9 @@ export function RequireAdmin({ children }: { children: React.ReactNode }) {
           You don&apos;t have access to the curator admin console.
         </p>
         <p className="mt-1">
-          Switch to <code>admin@org</code> in the top-right picker (POC) or
-          contact your platform team.
+          Your signed-in account is not a member of the{" "}
+          <code>skillhub-admins</code> Entra security group. Ask a platform
+          owner to add you, then sign out and back in to refresh your token.
         </p>
         {error ? (
           <p className="mt-2 text-xs text-rose-700/80">

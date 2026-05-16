@@ -20,6 +20,7 @@ async def issue(
     *,
     body: ApiKeyIssueRequest,
     actor: str,
+    actor_oid: str | None = None,
     api_keys: ContainerProxy,
     audit: ContainerProxy,
     settings: Settings,
@@ -34,13 +35,12 @@ async def issue(
     # Audit row. We use the action label `apikey_issue` and a synthetic
     # skill_id so it routes to a stable partition without polluting any
     # real skill's audit stream.
-    # NOTE: AuditAction Literal will need `apikey_issue`/`apikey_revoke`
-    # appended for full type safety — done in models/audit.py.
     await audit_svc.record(
         audit,
         skill_id=f"apikey:{doc.key_id}",
-        action="apikey_issue",  # type: ignore[arg-type]
+        action="apikey_issue",
         actor=actor,
+        actor_oid=actor_oid,
         after={"name": doc.name, "scopes": list(doc.scopes)},
     )
     return ApiKeyIssueResponse(
@@ -56,6 +56,7 @@ async def revoke(
     *,
     key_id: str,
     actor: str,
+    actor_oid: str | None = None,
     api_keys: ContainerProxy,
     audit: ContainerProxy,
     redis=None,
@@ -64,8 +65,9 @@ async def revoke(
     await audit_svc.record(
         audit,
         skill_id=f"apikey:{key_id}",
-        action="apikey_revoke",  # type: ignore[arg-type]
+        action="apikey_revoke",
         actor=actor,
+        actor_oid=actor_oid,
         after={"revoked_at": doc.revoked_at.isoformat() if doc.revoked_at else None},
     )
     return doc
@@ -74,7 +76,7 @@ async def revoke(
 async def list_keys(*, api_keys: ContainerProxy) -> list[ApiKeyListItem]:
     out: list[ApiKeyListItem] = []
     async for item in api_keys.query_items(
-        query="SELECT * FROM c", enable_cross_partition_query=True
+        query="SELECT * FROM c"
     ):
         doc = ApiKeyDoc.model_validate(item)
         out.append(

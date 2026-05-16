@@ -43,6 +43,23 @@ def test_audit_record_has_id_and_timestamp():
     assert a.id
     assert a.at.tzinfo is not None
     assert a.action == "upload"
+    # New `actor_oid` field defaults to None for back-compat / system actors.
+    assert a.actor_oid is None
+
+
+def test_audit_record_accepts_actor_oid():
+    a = AuditRecord(
+        skill_id="x",
+        action="approve",
+        actor="alice@org",
+        actor_oid="00000000-0000-0000-0000-000000000001",
+    )
+    assert a.actor_oid == "00000000-0000-0000-0000-000000000001"
+
+
+def test_audit_record_accepts_admin_session_start_action():
+    a = AuditRecord(skill_id="_system", action="admin_session_start", actor="alice@org")
+    assert a.action == "admin_session_start"
 
 
 def test_upload_response_serializes():

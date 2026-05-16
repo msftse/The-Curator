@@ -32,3 +32,31 @@ def test_oidc_mode_happy_path():
 def test_fake_oidc_mode_does_not_require_entra_settings():
     s = Settings(auth_mode="fake_oidc")
     assert s.auth_mode == "fake_oidc"
+
+
+def test_enforce_production_safety_refuses_stub_outside_local_dev():
+    s = Settings(auth_mode="stub", local_dev=False)
+    with pytest.raises(RuntimeError, match="LOCAL_DEV=1"):
+        s.enforce_production_safety()
+
+
+def test_enforce_production_safety_refuses_fake_oidc_outside_local_dev():
+    s = Settings(auth_mode="fake_oidc", local_dev=False)
+    with pytest.raises(RuntimeError, match="LOCAL_DEV=1"):
+        s.enforce_production_safety()
+
+
+def test_enforce_production_safety_allows_stub_with_local_dev():
+    s = Settings(auth_mode="stub", local_dev=True)
+    s.enforce_production_safety()  # must not raise
+
+
+def test_enforce_production_safety_allows_oidc():
+    s = Settings(
+        auth_mode="oidc",
+        local_dev=False,
+        entra_tenant_id="t",
+        entra_client_id="c",
+        entra_group_id_admin="g",
+    )
+    s.enforce_production_safety()  # must not raise

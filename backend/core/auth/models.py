@@ -26,10 +26,17 @@ Scope = Literal["catalog:read", "usage:write"]
 
 
 class User(BaseModel):
-    """A human principal — resolved from either the stub header or an OIDC JWT."""
+    """A human principal — resolved from either the stub header or an OIDC JWT.
+
+    `oid` is the immutable Entra object id (when available). Emails can be
+    renamed by tenant admins; oids cannot. We store both: emails for human
+    audit readability, oids as the durable key. The stub provider leaves
+    `oid` as `None`.
+    """
 
     email: str
     roles: list[Role]
+    oid: str | None = None
 
     def has_role(self, role: Role) -> bool:
         return role in self.roles

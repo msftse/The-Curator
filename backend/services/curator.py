@@ -145,7 +145,7 @@ async def _load_candidate_docs(skills: ContainerProxy) -> list[SkillDoc]:
     query = "SELECT * FROM c WHERE c.status IN ('approved','stale')"
     out: list[SkillDoc] = []
     async for raw in skills.query_items(
-        query=query, enable_cross_partition_query=True
+        query=query
     ):
         try:
             out.append(SkillDoc.model_validate(raw))

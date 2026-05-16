@@ -42,6 +42,9 @@ log = get_logger(__name__)
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     configure_logging(settings.log_level)
+    # Fail loudly if someone tries to boot prod with AUTH_MODE=stub/fake_oidc
+    # without LOCAL_DEV=1. See backend/core/config.py::enforce_production_safety.
+    settings.enforce_production_safety()
     # Telemetry is a no-op when APPLICATIONINSIGHTS_CONNECTION_STRING is unset.
     configure_telemetry(settings, app=app)
 
@@ -64,7 +67,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.api_keys_container = get_container(db, API_KEYS_CONTAINER)
     app.state.identity_provider = select_provider(settings)
 
-    log.info("app_started", extra={"auth_mode": settings.auth_mode})
+    log.info(
+        "app_started",
+        extra={"auth_mode": settings.auth_mode, "local_dev": settings.local_dev},
+    )
     try:
         yield
     finally:

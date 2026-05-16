@@ -35,6 +35,7 @@ async def upload_skill(
         filename=file.filename or "SKILL.md",
         data=data,
         uploader=user.email,
+        uploader_oid=user.oid,
         settings=settings,
         skills=skills,
         audit=audit,

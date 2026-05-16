@@ -35,6 +35,7 @@ async def pause(
     audit: ContainerProxy,
     redis: Redis,
     actor: str,
+    actor_oid: str | None = None,
 ) -> None:
     bind(actor=actor)
     body = {
@@ -52,6 +53,7 @@ async def pause(
         skill_id=_RESERVED_SKILL_ID,
         action="pause",
         actor=actor,
+        actor_oid=actor_oid,
         after={"paused": True},
     )
 
@@ -62,6 +64,7 @@ async def resume(
     audit: ContainerProxy,
     redis: Redis,
     actor: str,
+    actor_oid: str | None = None,
 ) -> None:
     bind(actor=actor)
     body = {
@@ -79,6 +82,7 @@ async def resume(
         skill_id=_RESERVED_SKILL_ID,
         action="resume",
         actor=actor,
+        actor_oid=actor_oid,
         after={"paused": False},
     )
 
