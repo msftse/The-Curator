@@ -1,0 +1,21 @@
+# Staging overlay — closest to prod, but smaller scale + permissive ingress
+# (no WAF, HTTP-only acceptable).
+
+frontend:
+  replicas: 2
+
+backend:
+  replicas: 2
+
+classifier:
+  keda:
+    pollingInterval: 10
+    cooldownPeriod: 180
+    maxReplicaCount: 3
+
+curator:
+  schedule: "0 3 * * *"
+
+ingress:
+  tls:
+    enabled: false

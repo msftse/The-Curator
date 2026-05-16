@@ -32,6 +32,16 @@ wait:
 	$(PY) scripts/wait_for_emulators.py
 
 api:
+	@# Refuse to start if port 8000 is already bound. macOS lets a new
+	@# uvicorn on 0.0.0.0:8000 coexist with an older one on 127.0.0.1:8000,
+	@# and loopback connections route to the older (stale) listener — a
+	@# silent way to serve pre-reload code. See architecture map §17.
+	@if lsof -nP -iTCP:8000 -sTCP:LISTEN >/dev/null 2>&1; then \
+		echo "port 8000 already in use:"; \
+		lsof -nP -iTCP:8000 -sTCP:LISTEN; \
+		echo "kill the existing listener first (e.g. \`lsof -ti:8000 | xargs kill\`)"; \
+		exit 1; \
+	fi
 	$(UVICORN) backend.app:create_app --factory --reload --host 0.0.0.0 --port 8000
 
 worker:

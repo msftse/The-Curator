@@ -1,0 +1,54 @@
+{{- /*
+RBAC for the backend SA — narrowly-scoped grants for the curator
+on-demand path (AGENTS.md §5 second line of defense).
+
+Two rules, two distinct K8s RBAC limitations:
+
+  1. `get` on cronjobs with resourceNames=["curator-ondemand"]
+     -- The backend reads the suspended CronJob template via
+        `read_namespaced_cron_job`. resourceNames works for `get`.
+  2. `create` on jobs
+     -- The backend creates a one-shot Job from the cloned spec.
+        K8s RBAC does NOT support resourceNames on `create` because
+        the resource has no name yet at admission time. We rely on the
+        fact that the backend service code can only construct Jobs from
+        the `curator-ondemand` CronJob template (no other CronJobs
+        exist in this namespace by design).
+
+If you ever add a second CronJob to the skillhub namespace, you must
+revisit this — either keep the assumption (and document it) or move to
+a custom admission webhook for fine-grained validation.
+*/ -}}
+{{- if .Values.backend.rbac.enabled -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: backend-curator-ondemand
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "skillhub.componentLabels" (dict "component" "backend" "Chart" .Chart "Release" .Release) | nindent 4 }}
+rules:
+  - apiGroups: ["batch"]
+    resources: ["cronjobs"]
+    resourceNames: ["{{ .Values.backend.env.K8S_CURATOR_ONDEMAND_CRONJOB | default "curator-ondemand" }}"]
+    verbs: ["get"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backend-curator-ondemand
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "skillhub.componentLabels" (dict "component" "backend" "Chart" .Chart "Release" .Release) | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: backend-curator-ondemand
+subjects:
+  - kind: ServiceAccount
+    name: backend
+    namespace: {{ .Values.global.namespace }}
+{{- end -}}

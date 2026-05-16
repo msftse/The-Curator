@@ -1,0 +1,33 @@
+{{- $component := "classifier" -}}
+{{- $ctx := dict "component" $component "Chart" .Chart "Release" .Release "Values" .Values -}}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "skillhub.componentName" $ctx }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "skillhub.componentLabels" $ctx | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "skillhub.componentName" $ctx }}
+    kind: Deployment
+  pollingInterval: {{ .Values.classifier.keda.pollingInterval }}
+  cooldownPeriod: {{ .Values.classifier.keda.cooldownPeriod }}
+  minReplicaCount: {{ .Values.classifier.keda.minReplicaCount }}
+  maxReplicaCount: {{ .Values.classifier.keda.maxReplicaCount }}
+  # Idle replica count is intentionally omitted — we want scale-to-zero.
+  # When `LLEN queue:classifier == 0` after cooldownPeriod, KEDA scales
+  # to `minReplicaCount` (0). AGENTS.md §4 rule 4: the janitor sweep
+  # (`backend/services/janitor.py`) re-queues stuck pending docs older
+  # than `janitor_classifier_stale_multiplier * cooldownPeriod`, so a
+  # crashed pod mid-BLPOP doesn't lose data.
+  triggers:
+    - type: redis
+      metadata:
+        address: "{{ .Values.classifier.env.REDIS_HOST }}:{{ .Values.classifier.env.REDIS_PORT }}"
+        listName: {{ .Values.classifier.keda.queueKey | quote }}
+        listLength: {{ .Values.classifier.keda.queueLength | quote }}
+        enableTLS: "true"
+        databaseIndex: "0"
+      authenticationRef:
+        name: {{ printf "%s-redis" (include "skillhub.componentName" $ctx) }}

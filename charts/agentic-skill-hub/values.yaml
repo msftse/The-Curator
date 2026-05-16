@@ -1,0 +1,289 @@
+# Default values — the per-env overlays in values-{dev,staging,prod}.yaml
+# override the bits that differ. Everything here is wired into templates;
+# nothing is "documentation only".
+#
+# Sections, top to bottom:
+#   - global         : cluster + identity + registry coordinates
+#   - image          : tag + pullPolicy (one tag for all four images)
+#   - frontend       : Deployment + Service + Ingress
+#   - backend        : Deployment + Service + Ingress + Role/RoleBinding
+#   - classifier     : Deployment + KEDA ScaledObject
+#   - curator        : CronJob + suspended on-demand CronJob
+#   - keyVault       : SecretProviderClass config (per component)
+#   - ingress        : AGIC class + hostnames
+#   - networkPolicy  : per-component egress allowlists
+
+global:
+  # Namespace the chart deploys into. MUST match the federated-credential
+  # `subject` in infra/modules/identity.bicep.
+  namespace: skillhub
+
+  # Azure tenant — passed to workload identity webhook annotations.
+  azureTenantId: ""
+
+  # Workload-identity client IDs (one per UAMI). Output by infra/main.bicep.
+  # The deploy workflow fills these via `--set` after `az deployment group create`.
+  workloadIdentity:
+    frontendClientId: ""
+    backendClientId: ""
+    classifierClientId: ""
+    curatorClientId: ""
+    # Federated separately so the backend pod can authenticate to the K8s
+    # API as a distinct identity (only used for audit — actual K8s RBAC is
+    # bound to the backend ServiceAccount, not this UAMI).
+    backendK8sJobsClientId: ""
+
+  # Object IDs of the same UAMIs — required when AGENTS.md §3 Cosmos/Redis
+  # access uses Entra ID (prod) instead of access keys (dev/staging).
+  # Values come from infra/modules/identity.bicep `principalId` outputs.
+  workloadIdentityObjectIds:
+    backend: ""
+    classifier: ""
+    curator: ""
+
+  # ACR login server, e.g. skillhubdeveastusacr.azurecr.io. Used as the
+  # image registry for all four images.
+  imageRegistry: ""
+
+# All four images share the same tag (one git SHA per deploy).
+image:
+  tag: "latest"
+  pullPolicy: IfNotPresent
+  # Repository basenames — final image is `{global.imageRegistry}/{repo}:{tag}`.
+  repositories:
+    frontend: skillhub-frontend
+    backend: skillhub-backend
+    classifier: skillhub-classifier
+    curator: skillhub-curator
+
+# ---------------------------------------------------------------------------
+# Frontend
+# ---------------------------------------------------------------------------
+frontend:
+  replicas: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  # Public runtime env. Read at request time by `app/env.js/route.ts` and
+  # emitted as `window.__ENV__` for the SPA. NO secrets here — only the
+  # public Entra coordinates + API base URL.
+  env:
+    AUTH_MODE: "oidc"
+    ENTRA_TENANT_ID: ""    # filled from main.bicep output
+    ENTRA_CLIENT_ID: ""    # SPA app reg client id
+    ENTRA_API_SCOPE: ""    # api://<api-app-id>/access_as_user
+    API_BASE: ""           # https://<backend-hostname>
+  podDisruptionBudget:
+    minAvailable: 1
+
+# ---------------------------------------------------------------------------
+# Backend
+# ---------------------------------------------------------------------------
+backend:
+  replicas: 2
+  resources:
+    requests:
+      cpu: 200m
+      memory: 384Mi
+    limits:
+      cpu: 1000m
+      memory: 768Mi
+  # Backend env — secrets come via Key Vault CSI (mounted into
+  # /mnt/secrets-store/). Public coordinates inlined here.
+  env:
+    AUTH_MODE: "oidc"
+    LOCAL_DEV: "false"
+    RUNTIME_MODE: "k8s"                # flips /v1/admin/curator/run to k8s_jobs path
+    K8S_NAMESPACE: "skillhub"
+    K8S_CURATOR_ONDEMAND_CRONJOB: "curator-ondemand"
+    LOG_LEVEL: "INFO"
+    CORS_ORIGINS: ""                   # e.g. https://hub.example.com
+    ENTRA_TENANT_ID: ""
+    ENTRA_CLIENT_ID: ""
+    ENTRA_GROUP_ID_ADMIN: ""
+    COSMOS_ENDPOINT: ""                # https://<account>.documents.azure.com:443/
+    COSMOS_KEY: ""                     # empty => DefaultAzureCredential path
+    COSMOS_DB_NAME: "skillhub"
+    BLOB_ACCOUNT_URL: ""               # https://<account>.blob.core.windows.net
+    REDIS_USE_ENTRA: "true"
+    REDIS_HOST: ""                     # <name>.redis.cache.windows.net
+    REDIS_PORT: "6380"
+    REDIS_SSL: "true"
+    REDIS_ENTRA_USERNAME: ""           # principal OID of backend UAMI
+    APPINSIGHTS_CONNECTION_STRING: ""
+    OTEL_SERVICE_ROLE: "api"
+  podDisruptionBudget:
+    minAvailable: 1
+  # K8s RBAC — narrowly-scoped Role granting the backend SA the ability to
+  # create Jobs from the `curator-ondemand` CronJob template only. The Role
+  # exists in the same namespace; no cluster-wide grants.
+  rbac:
+    enabled: true
+
+# ---------------------------------------------------------------------------
+# Classifier
+# ---------------------------------------------------------------------------
+classifier:
+  resources:
+    requests:
+      cpu: 200m
+      memory: 384Mi
+    limits:
+      cpu: 1000m
+      memory: 1024Mi
+  env:
+    # Same data-plane env as backend, minus HTTP-server bits.
+    COSMOS_ENDPOINT: ""
+    COSMOS_KEY: ""
+    COSMOS_DB_NAME: "skillhub"
+    BLOB_ACCOUNT_URL: ""
+    REDIS_USE_ENTRA: "true"
+    REDIS_HOST: ""
+    REDIS_PORT: "6380"
+    REDIS_SSL: "true"
+    REDIS_ENTRA_USERNAME: ""
+    APPINSIGHTS_CONNECTION_STRING: ""
+    OTEL_SERVICE_ROLE: "classifier"
+    CLASSIFIER_PROVIDER: "llm"
+    FOUNDRY_ENDPOINT: ""
+    FOUNDRY_DEPLOYMENT: ""
+    FOUNDRY_API_VERSION: "2024-08-01-preview"
+    # AZURE_AI_FOUNDRY_API_KEY is mounted from Key Vault (see keyVault below).
+  # KEDA Redis scaler — drives the Deployment between 0 and maxReplicaCount
+  # based on `LLEN queue:classifier`. AGENTS.md §4 rule 4 mitigation chain
+  # (Cosmos-first write + AOF + janitor sweep) still applies; KEDA is the
+  # scale-to-zero mechanism, not a replacement for those mitigations.
+  keda:
+    minReplicaCount: 0
+    maxReplicaCount: 5
+    pollingInterval: 30
+    cooldownPeriod: 300
+    queueLength: "1"
+    queueKey: "queue:classifier"
+    # Auth: KEDA uses a TriggerAuthentication that references the classifier
+    # ServiceAccount via workload identity. The classifier UAMI must have
+    # `redis-data-owner` (or equivalent) on the cache for this to work.
+
+# ---------------------------------------------------------------------------
+# Curator
+# ---------------------------------------------------------------------------
+curator:
+  schedule: "0 3 * * *"
+  # Suspended on-demand CronJob is the template the backend clones into a
+  # one-shot Job via the K8s API on /v1/admin/curator/run.
+  suspendOnDemand: true
+  resources:
+    requests:
+      cpu: 200m
+      memory: 384Mi
+    limits:
+      cpu: 1000m
+      memory: 1024Mi
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  # CronJob arg list — passed to `python -m backend.workers.curator_scheduler`.
+  # The `--once` flag short-circuits the scheduler's `while True` loop and
+  # runs a single pass to completion (AGENTS.md §5 + plan §3).
+  args:
+    - "--once"
+  env:
+    COSMOS_ENDPOINT: ""
+    COSMOS_KEY: ""
+    COSMOS_DB_NAME: "skillhub"
+    BLOB_ACCOUNT_URL: ""
+    REDIS_USE_ENTRA: "true"
+    REDIS_HOST: ""
+    REDIS_PORT: "6380"
+    REDIS_SSL: "true"
+    REDIS_ENTRA_USERNAME: ""
+    APPINSIGHTS_CONNECTION_STRING: ""
+    OTEL_SERVICE_ROLE: "curator"
+    CURATOR_REVIEW_ENABLED: "false"
+    FOUNDRY_ENDPOINT: ""
+    FOUNDRY_DEPLOYMENT: ""
+    FOUNDRY_API_VERSION: "2024-08-01-preview"
+
+# ---------------------------------------------------------------------------
+# Key Vault Secrets Provider (CSI driver)
+# ---------------------------------------------------------------------------
+# One SecretProviderClass per component. Each lists the KV secrets that pod
+# needs mounted at /mnt/secrets-store/. Workload identity (the per-component
+# UAMI) authenticates to Key Vault — KV Secrets User role assignment lives
+# in infra/modules/rbac.bicep.
+keyVault:
+  name: ""                  # <prefix>-kv
+  tenantId: ""              # same as global.azureTenantId
+  # Per-component secret lists. Names match the KV secret names. The CSI
+  # driver mounts each as a file under /mnt/secrets-store/.
+  secrets:
+    backend: []             # e.g. ["apikey-pepper"]
+    classifier:
+      - "foundry-api-key"   # mounted, then exposed as AZURE_AI_FOUNDRY_API_KEY env var
+    curator:
+      - "foundry-api-key"
+
+# ---------------------------------------------------------------------------
+# Ingress (AGIC)
+# ---------------------------------------------------------------------------
+ingress:
+  enabled: true
+  className: "azure-application-gateway"
+  annotations:
+    kubernetes.io/ingress.class: azure/application-gateway
+    appgw.ingress.kubernetes.io/health-probe-path: "/health"
+  # TLS — only enabled in prod. Dev/staging use HTTP-only or a self-signed
+  # cert. Prod expects the cert to be issued by the App Gateway listener
+  # against a Key Vault cert reference (configured on the BYO App Gateway).
+  tls:
+    enabled: false
+    secretName: ""
+  hosts:
+    frontend: ""            # hub.dev.example.com
+    backend: ""             # api.hub.dev.example.com
+
+# ---------------------------------------------------------------------------
+# NetworkPolicy egress allowlists
+# ---------------------------------------------------------------------------
+# Per-component egress targets. Templates render one NetworkPolicy per
+# component restricting egress to the listed CIDRs/ports + cluster DNS.
+# Use the AKS-managed VNet CIDRs (cosmos/redis/blob/foundry private endpoints).
+networkPolicy:
+  enabled: true
+  dnsPort: 53
+  # Egress targets — CIDR + port pairs. The Helm template renders these
+  # into `egress.to[].ipBlock.cidr` + `egress.ports[].port` entries.
+  # Default values are wide-open (0.0.0.0/0) for dev. Tighten in staging+prod.
+  egress:
+    frontend:
+      # Frontend only egresses to the backend Service (in-cluster), so no
+      # ipBlock entries are needed. The template adds an in-cluster
+      # backend-service rule unconditionally.
+      cidrs: []
+    backend:
+      # Egress to Cosmos (443), Redis (6380), Blob (443), Entra (443).
+      cidrs:
+        - cidr: "0.0.0.0/0"
+          ports: [443, 6380]
+    classifier:
+      cidrs:
+        - cidr: "0.0.0.0/0"
+          ports: [443, 6380]
+    curator:
+      cidrs:
+        - cidr: "0.0.0.0/0"
+          ports: [443, 6380]
+
+# ---------------------------------------------------------------------------
+# Pod security defaults — applied to every pod via _helpers.tpl.
+# ---------------------------------------------------------------------------
+podSecurity:
+  runAsNonRoot: true
+  runAsUser: 10001
+  fsGroup: 10001
+  seccompProfile: RuntimeDefault
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false   # backend writes tempfiles; relax for now.

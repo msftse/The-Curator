@@ -1,0 +1,38 @@
+{{- if .Values.ingress.enabled -}}
+{{- $component := "backend" -}}
+{{- $ctx := dict "component" $component "Chart" .Chart "Release" .Release "Values" .Values -}}
+{{- $host := .Values.ingress.hosts.backend -}}
+{{- if not $host -}}
+  {{- fail "ingress.hosts.backend is required when ingress.enabled=true" -}}
+{{- end -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "skillhub.componentName" $ctx }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "skillhub.componentLabels" $ctx | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.ingress.annotations | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ $host | quote }}
+      {{- if .Values.ingress.tls.secretName }}
+      secretName: {{ .Values.ingress.tls.secretName | quote }}
+      {{- end }}
+  {{- end }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "skillhub.componentName" $ctx }}
+                port:
+                  name: http
+{{- end -}}

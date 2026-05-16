@@ -135,6 +135,20 @@ class Settings(BaseSettings):
     usage_loaders_30d_window_days: int = 30
     janitor_classifier_stale_multiplier: int = 5
 
+    # ---- Runtime topology (M4) ----
+    # `inprocess` (default): /v1/admin/curator/run invokes execute_pass()
+    # directly inside the API process. Used in local-dev and during the
+    # App Service deprecation window.
+    # `k8s`: /v1/admin/curator/run creates a Job from the `curator-ondemand`
+    # CronJob template via the kubernetes API. The API pod's ServiceAccount
+    # is granted `create jobs` in the skillhub namespace (Helm chart Role).
+    runtime_mode: Literal["inprocess", "k8s"] = "inprocess"
+    # Namespace containing the curator-ondemand CronJob (matches Helm release
+    # namespace). Read only when runtime_mode=k8s.
+    k8s_namespace: str = "skillhub"
+    # Suspended CronJob whose podTemplate is cloned into one-shot Jobs.
+    k8s_curator_ondemand_cronjob: str = "curator-ondemand"
+
     # ---- Aux model: curator review (M3) ----
     # Provider toggle (only "foundry" or test-only "fake" supported).
     curator_review_provider: Literal["foundry", "fake"] = "foundry"
@@ -143,6 +157,16 @@ class Settings(BaseSettings):
     foundry_endpoint: str = ""  # e.g. "https://my-foundry.services.ai.azure.com/models"
     foundry_deployment: str = ""  # deployment name or model id
     foundry_api_version: str = "2024-08-01-preview"
+
+    # Azure AI Foundry **Project** endpoint (Microsoft Agent Framework).
+    # Distinct from `foundry_endpoint` (which is the AI Services account
+    # root, suitable for legacy azure-ai-inference). The Project endpoint
+    # is what MAF's `FoundryChatClient` and `FoundryAgent` consume:
+    #   https://<account>.services.ai.azure.com/api/projects/<project-name>
+    # Discover with:
+    #   az rest --method GET --url \
+    #     "https://management.azure.com/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.CognitiveServices/accounts/<acct>/projects?api-version=2025-04-01-preview"
+    azure_ai_project_endpoint: str = ""
 
     # Auth: prefer Managed Identity in Azure; fall back to API key for local dev only.
     azure_ai_foundry_api_key: str = ""

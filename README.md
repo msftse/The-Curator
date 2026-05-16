@@ -92,6 +92,15 @@ Storage split (full rationale in [docs/ARCHITECTURE.md §9](docs/ARCHITECTURE.md
 - Storage: Azure Blob Storage (Azurite locally)
 - Auth: Entra ID OIDC in M1; `X-User-Email` header stub for M0
 - Local dev: `docker compose up -d` brings up Cosmos emulator + Azurite + Redis
+- Runtime (M4+): AKS + ACR + Workload Identity. See [`infra/README.md`](infra/README.md).
+
+### Local dev vs deploy target
+
+The contributor loop is `docker compose up` + `make` (AGENTS.md §6). **You
+do not need `kubectl`, `helm`, or an AKS cluster to develop on this
+project.** AKS, the umbrella Helm chart in `charts/agentic-skill-hub/`,
+and the four Dockerfiles are deploy concerns owned by the
+`deploy-aks.yml` workflow. Ops runbook: [`infra/README.md`](infra/README.md).
 
 ## Quickstart
 
@@ -144,12 +153,13 @@ az ad group member add --group <group-id> --member-id "$(az ad signed-in-user sh
 #       ENTRA_TENANT_ID=<tenant guid>
 #       ENTRA_CLIENT_ID=<api app guid>
 #       ENTRA_GROUP_ID_ADMIN=<group object id>
-#    …and frontend/.env.local:
-#       NEXT_PUBLIC_AUTH_MODE=oidc
-#       NEXT_PUBLIC_API_BASE=http://localhost:8000
-#       NEXT_PUBLIC_ENTRA_TENANT_ID=<tenant guid>
-#       NEXT_PUBLIC_ENTRA_CLIENT_ID=<spa app guid>
-#       NEXT_PUBLIC_ENTRA_API_SCOPE=api://<api app guid>/access_as_user
+#    …and frontend/.env.local (unprefixed; read at runtime via /env.js
+#    in deployed pods, and inlined by next dev locally):
+#       AUTH_MODE=oidc
+#       API_BASE=http://localhost:8000
+#       ENTRA_TENANT_ID=<tenant guid>
+#       ENTRA_CLIENT_ID=<spa app guid>
+#       ENTRA_API_SCOPE=api://<api app guid>/access_as_user
 
 # 4. Restart both processes so the new env is picked up.
 make api

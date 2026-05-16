@@ -1,0 +1,313 @@
+name: deploy-aks
+
+# AKS deploy pipeline. Two phases:
+#   1. infra      — bicep what-if + apply (idempotent, runs every deploy)
+#   2. images     — build + push all four images, tagged with the git SHA
+#   3. helm       — helm upgrade --install per env
+#   4. smoke      — health + readiness checks; rollback on failure
+#
+# Trigger matrix:
+#   push to main                  -> dev
+#   workflow_dispatch (env=...)   -> chosen env (dev/staging/prod)
+#   tag v*                        -> prod (gated on environment protection)
+#
+# Identity: federated GitHub OIDC -> Azure subscription. The federated
+# credential and role assignment are provisioned by
+# scripts/setup_federated_credentials.sh (see infra/README.md). The same
+# token is used for `az deployment group create`, `az acr login --expose-token`,
+# and `az aks get-credentials`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: [dev, staging, prod]
+  push:
+    branches: [main]
+    tags: ["v*"]
+    # No path filters: tag pushes don't match `paths`, so a release would
+    # be skipped. Concurrency below collapses rapid pushes.
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-aks-${{ github.event.inputs.env || (startsWith(github.ref, 'refs/tags/v') && 'prod') || 'dev' }}
+  cancel-in-progress: false
+
+env:
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  # -----------------------------------------------------------------------
+  # 0. resolve target environment from trigger
+  # -----------------------------------------------------------------------
+  resolve-env:
+    runs-on: ubuntu-latest
+    outputs:
+      env: ${{ steps.pick.outputs.env }}
+      rg:  ${{ steps.pick.outputs.rg }}
+    steps:
+      - id: pick
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            ENV="${{ github.event.inputs.env }}"
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            ENV="prod"
+          else
+            ENV="dev"
+          fi
+          echo "env=$ENV"               >> "$GITHUB_OUTPUT"
+          echo "rg=rg-skillhub-$ENV"    >> "$GITHUB_OUTPUT"
+
+  # -----------------------------------------------------------------------
+  # 1. infra — Bicep what-if + apply.
+  # Outputs the ACR login server, AKS cluster name, namespace, ingress
+  # hostnames, tenant id, and the five workload-identity client IDs that
+  # Helm needs in the next job.
+  # -----------------------------------------------------------------------
+  infra:
+    needs: resolve-env
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-env.outputs.env }}
+    outputs:
+      acrLoginServer:        ${{ steps.outs.outputs.acrLoginServer }}
+      aksName:               ${{ steps.outs.outputs.aksName }}
+      tenantId:              ${{ steps.outs.outputs.tenantId }}
+      frontendClientId:      ${{ steps.outs.outputs.frontendClientId }}
+      backendClientId:       ${{ steps.outs.outputs.backendClientId }}
+      classifierClientId:    ${{ steps.outs.outputs.classifierClientId }}
+      curatorClientId:       ${{ steps.outs.outputs.curatorClientId }}
+      backendK8sJobsClientId: ${{ steps.outs.outputs.backendK8sJobsClientId }}
+      backendObjectId:       ${{ steps.outs.outputs.backendObjectId }}
+      classifierObjectId:    ${{ steps.outs.outputs.classifierObjectId }}
+      curatorObjectId:       ${{ steps.outs.outputs.curatorObjectId }}
+      keyVaultName:          ${{ steps.outs.outputs.keyVaultName }}
+      frontendHost:          ${{ steps.outs.outputs.frontendHost }}
+      backendHost:           ${{ steps.outs.outputs.backendHost }}
+    env:
+      ENV: ${{ needs.resolve-env.outputs.env }}
+      RG:  ${{ needs.resolve-env.outputs.rg }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC federated)
+        uses: azure/login@v2
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Bicep what-if
+        run: |
+          az deployment group what-if \
+            --resource-group "$RG" \
+            --template-file infra/main.bicep \
+            --parameters infra/parameters/$ENV.bicepparam
+
+      - name: Bicep apply
+        id: bicep
+        run: |
+          az deployment group create \
+            --resource-group "$RG" \
+            --template-file infra/main.bicep \
+            --parameters infra/parameters/$ENV.bicepparam \
+            --name "skillhub-$ENV-${{ github.run_number }}" \
+            --output json > deployment.json
+          cat deployment.json | jq '.properties.outputs'
+
+      - name: Export deployment outputs
+        id: outs
+        env:
+          # Per-environment ingress hostnames live in GitHub Environment
+          # variables, not Bicep — they are chart-time inputs, not infra.
+          # Set vars.FRONTEND_HOST and vars.BACKEND_HOST in the GH
+          # Environment settings for dev/staging/prod.
+          FRONTEND_HOST: ${{ vars.FRONTEND_HOST }}
+          BACKEND_HOST:  ${{ vars.BACKEND_HOST }}
+        run: |
+          OUTS=$(jq -r '.properties.outputs' deployment.json)
+          echo "acrLoginServer=$(echo "$OUTS"        | jq -r '.acrLoginServer.value')"        >> "$GITHUB_OUTPUT"
+          echo "aksName=$(echo "$OUTS"               | jq -r '.clusterName.value')"           >> "$GITHUB_OUTPUT"
+          echo "tenantId=$(echo "$OUTS"              | jq -r '.entraTenantId.value // empty')" >> "$GITHUB_OUTPUT"
+          echo "frontendClientId=$(echo "$OUTS"      | jq -r '.frontendUamiClientId.value')"   >> "$GITHUB_OUTPUT"
+          echo "backendClientId=$(echo "$OUTS"       | jq -r '.backendUamiClientId.value')"    >> "$GITHUB_OUTPUT"
+          echo "classifierClientId=$(echo "$OUTS"    | jq -r '.classifierUamiClientId.value')" >> "$GITHUB_OUTPUT"
+          echo "curatorClientId=$(echo "$OUTS"       | jq -r '.curatorUamiClientId.value')"    >> "$GITHUB_OUTPUT"
+          echo "backendK8sJobsClientId=$(echo "$OUTS"| jq -r '.backendK8sJobsUamiClientId.value')" >> "$GITHUB_OUTPUT"
+          echo "backendObjectId=$(echo "$OUTS"       | jq -r '.backendUamiPrincipalId.value // empty')"    >> "$GITHUB_OUTPUT"
+          echo "classifierObjectId=$(echo "$OUTS"    | jq -r '.classifierUamiPrincipalId.value // empty')" >> "$GITHUB_OUTPUT"
+          echo "curatorObjectId=$(echo "$OUTS"       | jq -r '.curatorUamiPrincipalId.value // empty')"    >> "$GITHUB_OUTPUT"
+          echo "keyVaultName=$(echo "$OUTS"          | jq -r '.keyVaultName.value // empty')"  >> "$GITHUB_OUTPUT"
+          echo "frontendHost=${FRONTEND_HOST}"                                                  >> "$GITHUB_OUTPUT"
+          echo "backendHost=${BACKEND_HOST}"                                                    >> "$GITHUB_OUTPUT"
+
+  # -----------------------------------------------------------------------
+  # 2. images — build & push all four images.
+  # Tags: <sha> (immutable, used by helm) + <env>-latest (mutable, ops convenience).
+  # -----------------------------------------------------------------------
+  images:
+    needs: [resolve-env, infra]
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-env.outputs.env }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - component: frontend
+            dockerfile: Dockerfile.frontend
+          - component: backend
+            dockerfile: Dockerfile.backend
+          - component: classifier
+            dockerfile: Dockerfile.classifier
+          - component: curator
+            dockerfile: Dockerfile.curator
+    env:
+      ACR: ${{ needs.infra.outputs.acrLoginServer }}
+      ENV: ${{ needs.resolve-env.outputs.env }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC federated)
+        uses: azure/login@v2
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: ACR login
+        run: az acr login --name "${ACR%%.*}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push ${{ matrix.component }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: |
+            ${{ env.ACR }}/skillhub-${{ matrix.component }}:${{ env.IMAGE_TAG }}
+            ${{ env.ACR }}/skillhub-${{ matrix.component }}:${{ env.ENV }}-latest
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to:   type=gha,scope=${{ matrix.component }},mode=max
+
+  # -----------------------------------------------------------------------
+  # 3. helm — upgrade --install the umbrella chart against the target AKS.
+  # All required `--set` values come from the infra job outputs. Smoke test
+  # rolls back on failure (helm --atomic --wait).
+  # -----------------------------------------------------------------------
+  helm:
+    needs: [resolve-env, infra, images]
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-env.outputs.env }}
+    env:
+      ENV: ${{ needs.resolve-env.outputs.env }}
+      RG:  ${{ needs.resolve-env.outputs.rg }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC federated)
+        uses: azure/login@v2
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get AKS credentials
+        uses: azure/aks-set-context@v4
+        with:
+          resource-group: ${{ env.RG }}
+          cluster-name:   ${{ needs.infra.outputs.aksName }}
+          # Use the kubelogin/AAD path so the GH OIDC token authenticates to
+          # the cluster (cluster has `disableLocalAccounts: true` in prod).
+          admin: "false"
+          use-kubelogin: "true"
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+
+      - name: Helm upgrade --install
+        run: |
+          helm upgrade --install skillhub charts/agentic-skill-hub \
+            --namespace skillhub --create-namespace \
+            --values charts/agentic-skill-hub/values-${ENV}.yaml \
+            --set image.tag="${IMAGE_TAG}" \
+            --set global.azureTenantId="${{ needs.infra.outputs.tenantId }}" \
+            --set global.imageRegistry="${{ needs.infra.outputs.acrLoginServer }}" \
+            --set global.workloadIdentity.frontendClientId="${{ needs.infra.outputs.frontendClientId }}" \
+            --set global.workloadIdentity.backendClientId="${{ needs.infra.outputs.backendClientId }}" \
+            --set global.workloadIdentity.classifierClientId="${{ needs.infra.outputs.classifierClientId }}" \
+            --set global.workloadIdentity.curatorClientId="${{ needs.infra.outputs.curatorClientId }}" \
+            --set global.workloadIdentity.backendK8sJobsClientId="${{ needs.infra.outputs.backendK8sJobsClientId }}" \
+            --set global.workloadIdentityObjectIds.backend="${{ needs.infra.outputs.backendObjectId }}" \
+            --set global.workloadIdentityObjectIds.classifier="${{ needs.infra.outputs.classifierObjectId }}" \
+            --set global.workloadIdentityObjectIds.curator="${{ needs.infra.outputs.curatorObjectId }}" \
+            --set keyVault.name="${{ needs.infra.outputs.keyVaultName }}" \
+            --set keyVault.tenantId="${{ needs.infra.outputs.tenantId }}" \
+            --set ingress.hosts.frontend="${{ needs.infra.outputs.frontendHost }}" \
+            --set ingress.hosts.backend="${{ needs.infra.outputs.backendHost }}" \
+            --atomic --wait --timeout=10m
+
+  # -----------------------------------------------------------------------
+  # 4. smoke — post-deploy health checks. `--atomic` already rolled back if
+  # the deployment never went Ready; this is the live-traffic acceptance.
+  # -----------------------------------------------------------------------
+  smoke:
+    needs: [resolve-env, infra, helm]
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-env.outputs.env }}
+    env:
+      RG:  ${{ needs.resolve-env.outputs.rg }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC federated)
+        uses: azure/login@v2
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get AKS credentials
+        uses: azure/aks-set-context@v4
+        with:
+          resource-group: ${{ env.RG }}
+          cluster-name:   ${{ needs.infra.outputs.aksName }}
+          admin: "false"
+          use-kubelogin: "true"
+
+      - name: Wait for deployments Available
+        run: |
+          kubectl -n skillhub wait \
+            --for=condition=available \
+            --timeout=300s \
+            deployment/skillhub-agentic-skill-hub-backend \
+            deployment/skillhub-agentic-skill-hub-frontend
+
+      - name: Backend /health probe
+        run: |
+          BACKEND_HOST="${{ needs.infra.outputs.backendHost }}"
+          if [[ -z "$BACKEND_HOST" ]]; then
+            echo "no backend host wired — skipping ingress health check"
+            exit 0
+          fi
+          for i in {1..30}; do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://${BACKEND_HOST}/health" || true)
+            if [[ "$CODE" == "200" ]]; then
+              echo "backend healthy on attempt $i"
+              exit 0
+            fi
+            echo "attempt $i: got $CODE, retrying in 5s"
+            sleep 5
+          done
+          echo "backend /health never returned 200; rolling back"
+          helm rollback skillhub -n skillhub
+          exit 1

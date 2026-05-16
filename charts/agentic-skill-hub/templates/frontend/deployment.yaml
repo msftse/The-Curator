@@ -1,0 +1,59 @@
+{{- $component := "frontend" -}}
+{{- $ctx := dict "component" $component "Chart" .Chart "Release" .Release "Values" .Values -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "skillhub.componentName" $ctx }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "skillhub.componentLabels" $ctx | nindent 4 }}
+spec:
+  replicas: {{ .Values.frontend.replicas }}
+  selector:
+    matchLabels:
+      {{- include "skillhub.selectorLabels" $ctx | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        {{- include "skillhub.selectorLabels" $ctx | nindent 8 }}
+        {{- include "skillhub.wiPodLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ $component }}
+      securityContext:
+        {{- include "skillhub.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: frontend
+          image: {{ include "skillhub.image" $ctx }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- include "skillhub.containerSecurityContext" . | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            {{- /* Runtime env injected into the Node process; consumed by
+                   `app/env.js/route.ts` to emit window.__ENV__. */ -}}
+            {{- include "skillhub.envFromMap" .Values.frontend.env | nindent 12 }}
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+          # Next.js standalone server starts fast; small initialDelay.
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 3

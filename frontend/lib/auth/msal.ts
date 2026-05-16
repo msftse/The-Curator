@@ -1,8 +1,9 @@
 // MSAL configuration + lazy singleton client.
 //
-// All settings come from `NEXT_PUBLIC_ENTRA_*` env vars wired at build time
-// by the SWA deploy workflow (see `scripts/setup-entra.sh` output block).
-// In stub mode (`NEXT_PUBLIC_AUTH_MODE !== "oidc"`) none of this is touched.
+// Settings come from the runtime env (`window.__ENV__` injected by `/env.js`,
+// see `frontend/lib/env.ts`). At build time we no longer know the tenant or
+// client id — that's deliberate, so a single image promotes across envs.
+// In stub mode (`AUTH_MODE !== "oidc"`) none of this is touched.
 //
 // We use `Redirect` flow (not popup) per spec: cleaner UX inside corporate
 // browsers, fewer popup-blocker headaches, and `loginRedirect` round-trips
@@ -16,19 +17,32 @@ import {
   type RedirectRequest,
 } from "@azure/msal-browser";
 
-export const AUTH_MODE =
-  (process.env.NEXT_PUBLIC_AUTH_MODE as "oidc" | "stub" | undefined) ?? "stub";
+import {
+  authMode,
+  entraClientId,
+  entraTenantId,
+  entraApiScope,
+  isOidc as isOidcEnv,
+} from "@/lib/env";
 
-export const IS_OIDC = AUTH_MODE === "oidc";
+/** Current auth mode, evaluated at call time (NOT module top). */
+export function authModeValue(): "oidc" | "stub" {
+  return authMode();
+}
 
-const TENANT_ID = process.env.NEXT_PUBLIC_ENTRA_TENANT_ID ?? "";
-const CLIENT_ID = process.env.NEXT_PUBLIC_ENTRA_CLIENT_ID ?? "";
+/** True when `AUTH_MODE === "oidc"`. Call at runtime — do NOT cache at module load. */
+export function isOidc(): boolean {
+  return isOidcEnv();
+}
 
 /**
  * Scope to request on the backend API. Should be exactly
- * `api://skillhub-<env>/access_as_user`, emitted by `scripts/setup-entra.sh`.
+ * `api://<api-app-id>/access_as_user`, emitted by `scripts/setup-entra.sh`.
+ * Reads runtime env at call time.
  */
-export const API_SCOPE = process.env.NEXT_PUBLIC_ENTRA_API_SCOPE ?? "";
+export function apiScope(): string {
+  return entraApiScope();
+}
 
 /**
  * Redirect URI must match a configured SPA redirect on the app registration.
@@ -41,20 +55,20 @@ export function redirectUri(): string {
 }
 
 function buildConfig(): Configuration {
+  const tenantId = entraTenantId();
+  const clientId = entraClientId();
   return {
     auth: {
-      clientId: CLIENT_ID,
-      authority: TENANT_ID
-        ? `https://login.microsoftonline.com/${TENANT_ID}`
+      clientId,
+      authority: tenantId
+        ? `https://login.microsoftonline.com/${tenantId}`
         : "",
       redirectUri: redirectUri(),
       // Land on the home page after sign-out so we don't loop on /auth/callback.
       postLogoutRedirectUri:
         typeof window !== "undefined" ? window.location.origin : undefined,
       // Single-tenant — refuse tokens minted by other tenants.
-      knownAuthorities: TENANT_ID
-        ? [`login.microsoftonline.com`]
-        : [],
+      knownAuthorities: tenantId ? [`login.microsoftonline.com`] : [],
     },
     cache: {
       // sessionStorage keeps tokens scoped to the tab; localStorage would
@@ -68,18 +82,21 @@ function buildConfig(): Configuration {
 
 // Lazy singleton — Next.js may render the layout on the server, where MSAL
 // has nothing to do. The factory is called once, on the client, when the
-// `AuthProvider` mounts.
+// `AuthProvider` mounts AND runtime env has been injected.
 let _client: PublicClientApplication | null = null;
 
 export function getMsal(): PublicClientApplication {
-  if (!IS_OIDC) {
+  if (!isOidcEnv()) {
     throw new Error(
-      "getMsal() called outside oidc mode — guard with IS_OIDC first.",
+      "getMsal() called outside oidc mode — guard with isOidc() first.",
     );
   }
-  if (!CLIENT_ID || !TENANT_ID) {
+  const tenantId = entraTenantId();
+  const clientId = entraClientId();
+  if (!clientId || !tenantId) {
     throw new Error(
-      "NEXT_PUBLIC_ENTRA_CLIENT_ID and NEXT_PUBLIC_ENTRA_TENANT_ID are required when AUTH_MODE=oidc.",
+      "ENTRA_CLIENT_ID and ENTRA_TENANT_ID are required when AUTH_MODE=oidc. " +
+        "Check that /env.js returned a populated window.__ENV__ payload.",
     );
   }
   if (_client === null) {
@@ -89,17 +106,19 @@ export function getMsal(): PublicClientApplication {
 }
 
 export function buildLoginRequest(): RedirectRequest {
+  const scope = entraApiScope();
   return {
-    scopes: API_SCOPE ? [API_SCOPE] : [],
+    scopes: scope ? [scope] : [],
     prompt: "select_account",
   };
 }
 
-export function buildSilentRequest(account: NonNullable<
-  ReturnType<PublicClientApplication["getActiveAccount"]>
->): SilentRequest {
+export function buildSilentRequest(
+  account: NonNullable<ReturnType<PublicClientApplication["getActiveAccount"]>>,
+): SilentRequest {
+  const scope = entraApiScope();
   return {
-    scopes: API_SCOPE ? [API_SCOPE] : [],
+    scopes: scope ? [scope] : [],
     account,
   };
 }

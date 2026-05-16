@@ -1,0 +1,67 @@
+{{- $component := "backend" -}}
+{{- $ctx := dict "component" $component "Chart" .Chart "Release" .Release "Values" .Values -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "skillhub.componentName" $ctx }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "skillhub.componentLabels" $ctx | nindent 4 }}
+spec:
+  replicas: {{ .Values.backend.replicas }}
+  selector:
+    matchLabels:
+      {{- include "skillhub.selectorLabels" $ctx | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        {{- include "skillhub.selectorLabels" $ctx | nindent 8 }}
+        {{- include "skillhub.wiPodLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ $component }}
+      securityContext:
+        {{- include "skillhub.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: backend
+          image: {{ include "skillhub.image" $ctx }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- include "skillhub.containerSecurityContext" . | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          env:
+            {{- include "skillhub.envFromMap" .Values.backend.env | nindent 12 }}
+            # AZURE_AI_FOUNDRY_API_KEY is NOT injected for the backend today
+            # (only classifier + curator hit Foundry). Add a valueFrom block
+            # here if that changes.
+          {{- if .Values.keyVault.secrets.backend }}
+          volumeMounts:
+            {{- include "skillhub.spcVolumeMount" . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 3
+      {{- if .Values.keyVault.secrets.backend }}
+      volumes:
+        {{- include "skillhub.spcVolume" $ctx | nindent 8 }}
+      {{- end }}

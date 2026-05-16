@@ -1,0 +1,61 @@
+# Shared .dockerignore for all four images.
+# Keep image build contexts minimal — see .agents/plans/m4-aks-deployment.md Task 5.
+
+# VCS
+.git
+.gitignore
+.gitattributes
+
+# Python build artefacts
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/.pyright_cache
+.venv
+venv
+.env
+.env.local
+.env.*.local
+
+# Node build artefacts
+**/node_modules
+frontend/.next
+frontend/out
+frontend/.turbo
+
+# Tests / docs / planning — not shipped in any image
+backend/tests
+docs
+.agents
+.opencode
+.github
+charts
+infra
+
+# Editor / OS
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Logs / scratch
+*.log
+tmp
+.cache
+
+# Local stack artifacts
+docker-compose.yml
+docker-compose.*.yml
+azurite-data
+cosmos-data
+redis-data
+
+# Misc
+Makefile
+README.md
+AGENTS.md
+LICENSE
+*.excalidraw

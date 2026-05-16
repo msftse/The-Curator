@@ -1,0 +1,74 @@
+# Prod overlay — BYO App Gateway, TLS terminated at the gateway (KV cert),
+# zone-redundant scheduling, larger resource ceilings.
+
+frontend:
+  replicas: 3
+  resources:
+    requests:
+      cpu: 200m
+      memory: 384Mi
+    limits:
+      cpu: 1000m
+      memory: 768Mi
+  podDisruptionBudget:
+    minAvailable: 2
+
+backend:
+  replicas: 3
+  resources:
+    requests:
+      cpu: 500m
+      memory: 768Mi
+    limits:
+      cpu: 2000m
+      memory: 1536Mi
+  podDisruptionBudget:
+    minAvailable: 2
+
+classifier:
+  resources:
+    requests:
+      cpu: 500m
+      memory: 768Mi
+    limits:
+      cpu: 2000m
+      memory: 2048Mi
+  keda:
+    pollingInterval: 15
+    cooldownPeriod: 300
+    maxReplicaCount: 10
+
+curator:
+  schedule: "0 3 * * *"
+  resources:
+    requests:
+      cpu: 500m
+      memory: 768Mi
+    limits:
+      cpu: 2000m
+      memory: 2048Mi
+
+ingress:
+  # TLS handled at the BYO App Gateway listener (cert from Key Vault). The
+  # ingress resource still needs the host names + (optionally) a TLS section
+  # for AGIC to wire the listener mapping.
+  tls:
+    enabled: true
+    secretName: ""    # cert lives on the App Gateway listener, not as a K8s secret
+
+networkPolicy:
+  # Tighten egress in prod. CIDRs should be the private endpoint subnets
+  # for each Azure service (filled by operations after first deploy).
+  egress:
+    backend:
+      cidrs:
+        - cidr: "10.0.0.0/8"
+          ports: [443, 6380]
+    classifier:
+      cidrs:
+        - cidr: "10.0.0.0/8"
+          ports: [443, 6380]
+    curator:
+      cidrs:
+        - cidr: "10.0.0.0/8"
+          ports: [443, 6380]

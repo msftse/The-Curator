@@ -1,0 +1,83 @@
+# syntax=docker/dockerfile:1.7
+
+# Backend API image — FastAPI served by uvicorn.
+# Built from the repo root: `docker build -f Dockerfile.backend -t skillhub-backend .`
+#
+# Multistage:
+#   1. `builder` resolves the locked dependency set with uv into /opt/venv.
+#   2. `runtime` ships the venv + backend/ package only, runs as uid 10001.
+#
+# The optional `k8s` extra (kubernetes client) is installed in the backend
+# image because /v1/admin/curator/run creates a Job via the K8s API when
+# RUNTIME_MODE=k8s (see backend/api/curator.py). Other images skip it.
+
+ARG PYTHON_VERSION=3.12-slim
+
+# ---------- builder ----------
+FROM python:${PYTHON_VERSION} AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=1 \
+    UV_PROJECT_ENVIRONMENT=/opt/venv
+
+# Build deps for the few wheels that need compilation (hiredis, cryptography
+# fallbacks on architectures without wheels).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# uv from official install script — pinned to a major.
+ADD https://astral.sh/uv/install.sh /uv-installer.sh
+RUN sh /uv-installer.sh && rm /uv-installer.sh
+ENV PATH="/root/.local/bin:${PATH}"
+
+WORKDIR /app
+
+# Copy only the dependency manifests first so the layer caches across code
+# changes. The lockfile pins the full graph.
+COPY pyproject.toml uv.lock ./
+
+# Sync the locked dependencies into /opt/venv. `--no-dev` strips test/lint
+# tooling. `--extra k8s` is the optional dep we need for the curator
+# on-demand Job path. The optional `k8s` extra is declared in pyproject.toml.
+RUN uv venv /opt/venv \
+    && uv sync --frozen --no-dev --extra k8s --python /opt/venv/bin/python
+
+# Now copy the backend package and reinstall to make it importable as a
+# distribution. We exclude tests via .dockerignore.
+COPY backend ./backend
+RUN uv pip install --python /opt/venv/bin/python --no-deps .
+
+# ---------- runtime ----------
+FROM python:${PYTHON_VERSION} AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:${PATH}" \
+    PORT=8000
+
+# Minimal runtime deps. `curl` is here for the HEALTHCHECK; tini reaps zombies.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates tini \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 10001 app \
+    && useradd --system --uid 10001 --gid app --home /app --shell /sbin/nologin app
+
+WORKDIR /app
+
+# Copy the venv + application code from the builder.
+COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /app/backend /app/backend
+
+USER 10001:10001
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD curl -fsS "http://127.0.0.1:${PORT}/health" || exit 1
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["sh", "-c", "uvicorn backend.app:create_app --factory --host 0.0.0.0 --port ${PORT}"]

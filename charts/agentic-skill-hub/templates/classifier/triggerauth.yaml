@@ -1,0 +1,31 @@
+{{- /*
+KEDA TriggerAuthentication — feeds the Redis access password into the
+Redis scaler from a K8s Secret. The Secret itself is synced from Key
+Vault via the classifier's SecretProviderClass (with
+`secretObjects.syncSecret.enabled: true`); see
+`templates/classifier/secretproviderclass.yaml`.
+
+Why not workload identity for the scaler? KEDA's `azure-workload`
+TriggerAuthentication only works for Azure services that accept AAD
+bearer tokens at the data plane (Service Bus, Event Hubs, Storage Queue,
+etc.). Azure Cache for Redis's data plane needs the access key (or an
+AAD-derived password, but KEDA's Redis scaler doesn't have native
+support for the latter).
+
+The app pods themselves still use Entra (redis_use_entra=true). The
+access key here is read-only for KEDA's perspective — it only LLENs.
+*/ -}}
+{{- $component := "classifier" -}}
+{{- $ctx := dict "component" $component "Chart" .Chart "Release" .Release "Values" .Values -}}
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: {{ printf "%s-redis" (include "skillhub.componentName" $ctx) }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "skillhub.componentLabels" $ctx | nindent 4 }}
+spec:
+  secretTargetRef:
+    - parameter: password
+      name: {{ printf "%s-redis-keda" (include "skillhub.componentName" $ctx) }}
+      key: redis-keda-key

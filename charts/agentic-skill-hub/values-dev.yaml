@@ -1,0 +1,27 @@
+# Dev overlay — sized for nightly CI churn, queue-pollingInterval tight to
+# minimize upload→classify latency during demos.
+
+frontend:
+  replicas: 1
+  podDisruptionBudget:
+    minAvailable: 0
+
+backend:
+  replicas: 1
+  podDisruptionBudget:
+    minAvailable: 0
+  env:
+    LOG_LEVEL: "DEBUG"
+
+classifier:
+  keda:
+    pollingInterval: 5
+    cooldownPeriod: 60
+    maxReplicaCount: 2
+
+curator:
+  schedule: "0 */6 * * *"   # every 6h in dev for faster lifecycle observability
+
+ingress:
+  tls:
+    enabled: false

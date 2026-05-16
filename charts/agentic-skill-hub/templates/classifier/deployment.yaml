@@ -1,0 +1,67 @@
+{{- $component := "classifier" -}}
+{{- $ctx := dict "component" $component "Chart" .Chart "Release" .Release "Values" .Values -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "skillhub.componentName" $ctx }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "skillhub.componentLabels" $ctx | nindent 4 }}
+spec:
+  # Replicas is owned by the KEDA ScaledObject — Helm sets `0` so we don't
+  # fight on initial install; KEDA scales up immediately if the queue has
+  # backlog. After install, `kubectl get deploy` will show whatever KEDA
+  # last set (do not `kubectl scale` manually).
+  replicas: 0
+  selector:
+    matchLabels:
+      {{- include "skillhub.selectorLabels" $ctx | nindent 6 }}
+  strategy:
+    type: Recreate   # workers are stateless w.r.t. each other; no rolling
+  template:
+    metadata:
+      labels:
+        {{- include "skillhub.selectorLabels" $ctx | nindent 8 }}
+        {{- include "skillhub.wiPodLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ $component }}
+      securityContext:
+        {{- include "skillhub.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: classifier
+          image: {{ include "skillhub.image" $ctx }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- include "skillhub.containerSecurityContext" . | nindent 12 }}
+          # No ports — the classifier is a queue consumer, not an HTTP server.
+          env:
+            {{- include "skillhub.envFromMap" .Values.classifier.env | nindent 12 }}
+            {{- if .Values.keyVault.secrets.classifier }}
+            - name: AZURE_AI_FOUNDRY_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ printf "%s-foundry" (include "skillhub.componentName" $ctx) }}
+                  key: foundry-api-key
+            {{- end }}
+          volumeMounts:
+            {{- if .Values.keyVault.secrets.classifier }}
+            {{- include "skillhub.spcVolumeMount" . | nindent 12 }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.classifier.resources | nindent 12 }}
+          # The classifier worker has no readiness endpoint; rely on
+          # `BLPOP queue:classifier` blocking. Liveness can shell to
+          # check the python process is up.
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pgrep -f backend.workers.classifier"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+      volumes:
+        {{- if .Values.keyVault.secrets.classifier }}
+        {{- include "skillhub.spcVolume" $ctx | nindent 8 }}
+        {{- end }}
+      # Tolerate brief Redis blips — don't churn the pod for a transient
+      # connection reset.
+      terminationGracePeriodSeconds: 30

@@ -1,0 +1,68 @@
+{{- /*
+Scheduled CronJob — fires on `.Values.curator.schedule`. The scheduler's
+`while True: sleep(N)` loop in `backend/workers/curator_scheduler.py` is
+NOT used here; we invoke it with `--once` so each tick runs a single
+pass and exits. AGENTS.md §5 second-line defense: `concurrencyPolicy:
+Forbid` prevents overlap. The Redis lock in `backend/core/redis.py`
+(`key_curator_run_lock()`) is the first-line guard and still acquires
+inside the run; if you remove either, the curator can overlap.
+*/ -}}
+{{- $component := "curator" -}}
+{{- $ctx := dict "component" $component "Chart" .Chart "Release" .Release "Values" .Values -}}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "skillhub.componentName" $ctx }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "skillhub.componentLabels" $ctx | nindent 4 }}
+spec:
+  schedule: {{ .Values.curator.schedule | quote }}
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: {{ .Values.curator.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.curator.failedJobsHistoryLimit }}
+  jobTemplate:
+    metadata:
+      labels:
+        {{- include "skillhub.componentLabels" $ctx | nindent 8 }}
+    spec:
+      backoffLimit: 0   # don't retry — let the next schedule pick it up.
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            {{- include "skillhub.selectorLabels" $ctx | nindent 12 }}
+            {{- include "skillhub.wiPodLabels" . | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          serviceAccountName: {{ $component }}
+          securityContext:
+            {{- include "skillhub.podSecurityContext" . | nindent 12 }}
+          containers:
+            - name: curator
+              image: {{ include "skillhub.image" $ctx }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              securityContext:
+                {{- include "skillhub.containerSecurityContext" . | nindent 16 }}
+              args:
+                {{- toYaml .Values.curator.args | nindent 16 }}
+              env:
+                {{- include "skillhub.envFromMap" .Values.curator.env | nindent 16 }}
+                {{- if .Values.keyVault.secrets.curator }}
+                - name: AZURE_AI_FOUNDRY_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ printf "%s-foundry" (include "skillhub.componentName" $ctx) }}
+                      key: foundry-api-key
+                {{- end }}
+              volumeMounts:
+                {{- if .Values.keyVault.secrets.curator }}
+                {{- include "skillhub.spcVolumeMount" . | nindent 16 }}
+                {{- end }}
+              resources:
+                {{- toYaml .Values.curator.resources | nindent 16 }}
+          volumes:
+            {{- if .Values.keyVault.secrets.curator }}
+            {{- include "skillhub.spcVolume" $ctx | nindent 12 }}
+            {{- end }}

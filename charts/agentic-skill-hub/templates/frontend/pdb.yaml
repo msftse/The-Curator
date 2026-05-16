@@ -1,0 +1,18 @@
+{{- $component := "frontend" -}}
+{{- $ctx := dict "component" $component "Chart" .Chart "Release" .Release "Values" .Values -}}
+{{- with .Values.frontend.podDisruptionBudget -}}
+{{- if or (gt (int .minAvailable) 0) (hasKey . "maxUnavailable") }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "skillhub.componentName" $ctx }}
+  namespace: {{ $.Values.global.namespace }}
+  labels:
+    {{- include "skillhub.componentLabels" $ctx | nindent 4 }}
+spec:
+  minAvailable: {{ .minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "skillhub.selectorLabels" $ctx | nindent 6 }}
+{{- end -}}
+{{- end -}}

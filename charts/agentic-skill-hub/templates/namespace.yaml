@@ -1,0 +1,12 @@
+{{- /*
+Namespace — created by the chart so a fresh `helm install` works without
+any out-of-band kubectl steps. The federated credentials in
+infra/modules/identity.bicep pin to `system:serviceaccount:skillhub:*`,
+so the namespace name MUST match `global.namespace=skillhub`.
+*/ -}}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.global.namespace }}
+  labels:
+    {{- include "skillhub.commonLabels" . | nindent 4 }}

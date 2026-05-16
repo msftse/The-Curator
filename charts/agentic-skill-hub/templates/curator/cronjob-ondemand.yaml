@@ -1,0 +1,91 @@
+{{- /*
+Suspended on-demand CronJob template.
+
+Critical naming contract: this resource's `metadata.name` MUST be
+`curator-ondemand` (matching `K8S_CURATOR_ONDEMAND_CRONJOB` in backend
+env + the `resourceNames` in the backend Role). The backend reads this
+CronJob's `spec.jobTemplate` and clones it into a Job on every
+`POST /v1/admin/curator/run`. See `backend/services/k8s_jobs.py`.
+
+Do NOT add a release prefix here, do NOT change the name without also
+updating:
+  - charts/agentic-skill-hub/values.yaml :: backend.env.K8S_CURATOR_ONDEMAND_CRONJOB
+  - charts/agentic-skill-hub/templates/backend/rbac.yaml :: resourceNames
+  - backend/core/config.py :: k8s_curator_ondemand_cronjob default
+
+`suspend: true` is non-negotiable. If this CronJob ever fires on its own
+schedule, you'll get duplicate runs (this template AND the scheduled
+CronJob in cronjob.yaml). It exists ONLY as a podTemplate factory.
+*/ -}}
+{{- if .Values.curator.suspendOnDemand -}}
+{{- $component := "curator" -}}
+{{- $ctx := dict "component" $component "Chart" .Chart "Release" .Release "Values" .Values -}}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: curator-ondemand
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "skillhub.componentLabels" $ctx | nindent 4 }}
+    skillhub.io/ondemand-template: "true"
+  annotations:
+    skillhub.io/description: |
+      Suspended template — backend clones its jobTemplate on /v1/admin/curator/run.
+      MUST stay suspended; if you see this firing, something is wrong.
+spec:
+  # Schedule is unreachable while suspend=true; pick something that won't
+  # fire even if `suspend` is accidentally flipped off (Feb 30 = never).
+  schedule: "0 0 30 2 *"
+  suspend: true
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 0
+  failedJobsHistoryLimit: 0
+  jobTemplate:
+    metadata:
+      labels:
+        {{- include "skillhub.componentLabels" $ctx | nindent 8 }}
+        skillhub.io/ondemand: "true"
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            {{- include "skillhub.selectorLabels" $ctx | nindent 12 }}
+            {{- include "skillhub.wiPodLabels" . | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          serviceAccountName: {{ $component }}
+          securityContext:
+            {{- include "skillhub.podSecurityContext" . | nindent 12 }}
+          containers:
+            - name: curator
+              image: {{ include "skillhub.image" $ctx }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              securityContext:
+                {{- include "skillhub.containerSecurityContext" . | nindent 16 }}
+              # Default args — `--once` is the safe default. The backend
+              # overrides with `--once --dry-run` when the admin invokes
+              # /run?dry_run=true (see `backend/services/k8s_jobs.py`).
+              args:
+                - "--once"
+              env:
+                {{- include "skillhub.envFromMap" .Values.curator.env | nindent 16 }}
+                {{- if .Values.keyVault.secrets.curator }}
+                - name: AZURE_AI_FOUNDRY_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ printf "%s-foundry" (include "skillhub.componentName" $ctx) }}
+                      key: foundry-api-key
+                {{- end }}
+              volumeMounts:
+                {{- if .Values.keyVault.secrets.curator }}
+                {{- include "skillhub.spcVolumeMount" . | nindent 16 }}
+                {{- end }}
+              resources:
+                {{- toYaml .Values.curator.resources | nindent 16 }}
+          volumes:
+            {{- if .Values.keyVault.secrets.curator }}
+            {{- include "skillhub.spcVolume" $ctx | nindent 12 }}
+            {{- end }}
+{{- end -}}

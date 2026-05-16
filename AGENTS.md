@@ -325,3 +325,122 @@ CI (GitHub Actions, M1+) enforces all of the above. Local discipline keeps CI gr
 - Storage placement question → §3 + §4 of this file.
 - About to write a delete? → §5. Don't.
 - About to write to Redis without Cosmos? → §4. Don't.
+
+---
+
+## 13. Runtime topology — AKS (M4+)
+
+The hub runs on **Azure Kubernetes Service** (cluster `aks-skillhub-<env>`,
+Azure CNI Overlay + Cilium dataplane + Cilium NetworkPolicy, K8s 1.30.5,
+Workload Identity + OIDC issuer enabled). Implementation contract:
+`.agents/plans/m4-aks-deployment.md`.
+
+Local dev is unchanged — §6 still applies. `docker-compose up` + `make`
+is the contributor loop. Contributors do **not** need `kubectl`. AKS is a
+deploy target, not a development environment.
+
+### Four images, one git SHA
+
+| Image | Dockerfile | Workload |
+|-------|------------|----------|
+| `skillhub-frontend`   | `Dockerfile.frontend`   | Next.js 14 standalone server. Reads env at request time via `/env.js` (`window.__ENV__`). One image promoted across envs. |
+| `skillhub-backend`    | `Dockerfile.backend`    | FastAPI app. Serves all `/v1/*` routes + `/health`. Reads `RUNTIME_MODE=k8s` and dispatches curator runs via `backend/services/k8s_jobs.py`. |
+| `skillhub-classifier` | `Dockerfile.classifier` | `python -m backend.workers.classifier`. KEDA-scaled `0..N` on `LLEN queue:classifier`. Never API-spawned. |
+| `skillhub-curator`    | `Dockerfile.curator`    | `python -m backend.workers.curator_scheduler --once`. CronJob (`0 3 * * *`) + suspended `curator-ondemand` CronJob template cloned by the backend on `/v1/admin/curator/run`. |
+
+All four are tagged `{acrLoginServer}/skillhub-{component}:{git-sha}` by
+`deploy-aks.yml`. The git SHA flows into the chart as `image.tag` — never
+`latest` for production deploys.
+
+### ServiceAccount → UAMI mapping
+
+| Pod | ServiceAccount | UAMI | Azure roles (see `infra/modules/rbac.bicep`) |
+|-----|----------------|------|------------------------------------------------|
+| frontend   | `frontend`   | `id-skillhub-<env>-frontend`   | (none — public SPA, no Azure data plane) |
+| backend    | `backend`    | `id-skillhub-<env>-backend`    | Cosmos Built-in Data Contributor, KV Secrets User, Storage Blob Data Contributor, Redis Data Owner (Entra) |
+| classifier | `classifier` | `id-skillhub-<env>-classifier` | same as backend |
+| curator    | `curator`    | `id-skillhub-<env>-curator`    | same as backend |
+| backend (K8s API only) | (uses `backend` SA + K8s Role) | `id-skillhub-<env>-backend-k8s-jobs` | (no Azure roles; the K8s Role grants `create,get jobs.batch` in `skillhub` ns only) |
+
+Federated credentials bind each UAMI to `system:serviceaccount:skillhub:<sa>`.
+ServiceAccount names are **literal** (`frontend`/`backend`/`classifier`/`curator`)
+because the federated credential subjects in `infra/modules/identity.bicep`
+hardcode them. Do not rename via Helm `nameOverride`.
+
+### KEDA classifier scaler
+
+- `ScaledObject` (`charts/.../templates/classifier/scaledobject.yaml`)
+  scales the classifier Deployment on `LLEN queue:classifier`.
+- `TriggerAuthentication` references the classifier SA via workload identity;
+  the Redis auth key itself is synced into a K8s Secret via KV CSI.
+- AGENTS.md §4 rule 4 is **not relaxed** by KEDA. The upload handler still
+  writes the pending Cosmos doc before pushing to Redis; the janitor sweep
+  (`backend/services/janitor.py`) still re-queues docs lost on scale-down.
+- KEDA itself is **not** part of this chart. Install KEDA cluster-side
+  (Helm or addon) before `helm install skillhub …`.
+
+### Curator: CronJob + suspended on-demand CronJob
+
+- Scheduled run: K8s `CronJob` (`concurrencyPolicy: Forbid`, default
+  `0 3 * * *`). The Redis `key_curator_run_lock` is the first defense
+  against overlap; CronJob `Forbid` is the second.
+- On-demand run: `curator-ondemand` is a literal-named, `suspend: true`
+  CronJob template (`schedule: "0 0 30 2 *"` so it never fires even if
+  `suspend` is toggled off accidentally). `POST /v1/admin/curator/run`
+  creates a one-shot `Job` from its `jobTemplate.spec` via the K8s API.
+- The backend's K8s API access is via a narrowly-scoped `Role` in the
+  `skillhub` namespace: `verbs: [create, get]` on `jobs.batch` only.
+  No `list pods`, no `list secrets`, no `create deployments`. The Role
+  yaml lives in `charts/agentic-skill-hub/templates/backend/rbac.yaml`.
+- AGENTS.md §5 (never-delete) is enforced cluster-side by `Job`
+  `ttlSecondsAfterFinished` and `successfulJobsHistoryLimit` settling old
+  Jobs — **never** deleting skill data. `backend/services/k8s_jobs.py` is
+  in the AST gate's `_GUARDED_FILES` list.
+
+### Ingress (AGIC)
+
+- Dev / staging: AGIC **addon** mode. AKS provisions a managed Application
+  Gateway in the subnet specified by `agicSubnetCIDR`.
+- Prod: **BYO** App Gateway, referenced by `agicAppGatewayId`. TLS cert
+  comes from a Key Vault cert reference on the listener (not from a K8s
+  TLS Secret). The chart leaves `ingress.tls.enabled: false` and relies
+  on AGW termination.
+- Hostnames are **chart-time inputs**, not Bicep outputs. They live in
+  GitHub Environment variables `FRONTEND_HOST` + `BACKEND_HOST` and are
+  passed via `helm --set ingress.hosts.{frontend,backend}=…` by the
+  deploy workflow.
+
+### `runtime_mode` — the local-dev escape hatch
+
+`backend/core/config.py:Settings.runtime_mode` is `"inprocess"` by default.
+In that mode `POST /v1/admin/curator/run` invokes the scheduler in-process
+(the existing M3 behavior, used by local docker-compose). When set to
+`"k8s"` (the chart default in `values.yaml`), the same endpoint dispatches
+a Job via `backend/services/k8s_jobs.py`. The `kubernetes` library is
+imported **lazily inside the dispatch function**, never at module top
+level — CI lint asserts this. A contributor running `docker compose up`
+must not hit any `kubernetes`-import code path.
+
+### Storage split is unchanged
+
+§3 + §4 still govern. AKS is the compute substrate; Cosmos, Redis, Blob,
+and Key Vault are still the storage substrate. No new Redis writes were
+introduced by M4 except the existing `admin_seen:{oid|email}` lock from
+§6a.
+
+### Deploy mechanics
+
+- `.github/workflows/deploy-aks.yml`: 4 jobs (`infra` → `images` →
+  `helm` → `smoke`). `helm upgrade --install --atomic --wait` is the
+  rollback boundary; if the chart never goes Ready, Helm reverts.
+- `--atomic` rolls back on Helm failure. The smoke job is the post-deploy
+  live-traffic check; on `/health != 200`, it runs `helm rollback skillhub`
+  explicitly.
+- Per-env values overlay: `charts/agentic-skill-hub/values-{dev,staging,prod}.yaml`.
+- Cluster-bound chart values (UAMI client IDs, ACR login server, KV name)
+  come from Bicep deployment outputs and are stitched in by the workflow.
+
+### Operating runbook
+
+`infra/README.md` is the on-call reference: provisioning, image rotation,
+rollback, AGIC 502s, KEDA-not-scaling, CronJob skips, pending pods.

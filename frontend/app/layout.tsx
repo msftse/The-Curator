@@ -20,6 +20,21 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        {/*
+         * Runtime env injection — see `frontend/lib/env.ts`.
+         *
+         * `/env.js` is served by `app/env.js/route.ts` and writes
+         * `window.__ENV__` with the container's public env vars. It MUST
+         * load before any React client bundle so MSAL + the API client
+         * see the right config on first render.
+         *
+         * Plain `<script>` (not next/script) because we need synchronous,
+         * pre-hydration execution. `no-store` on the response means a
+         * config rollout takes effect on the next page load.
+         */}
+        <script src="/env.js" />
+      </head>
       <body className="flex min-h-screen flex-col">
         <AuthProvider>
           {/* Top "NEW" announcement banner */}
