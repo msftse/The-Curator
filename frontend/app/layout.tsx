@@ -2,6 +2,7 @@ import "./globals.css";
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { AdminNavLink } from "@/components/AdminNavLink";
 import { UserPicker } from "@/components/UserPicker";
 
 export const metadata: Metadata = {
@@ -32,6 +33,7 @@ export default function RootLayout({
               <Link href="/admin/queue" className="text-gray-600 hover:text-gray-900">
                 Review queue
               </Link>
+              <AdminNavLink href="/admin/curator">Curator</AdminNavLink>
             </nav>
             <UserPicker />
           </div>

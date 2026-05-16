@@ -1,0 +1,38 @@
+"use client";
+
+import { useAdminProbe } from "@/lib/hooks/useAdminProbe";
+
+export function RequireAdmin({ children }: { children: React.ReactNode }) {
+  const { isAdmin, isLoading, error } = useAdminProbe();
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        <div className="h-6 w-32 animate-pulse rounded bg-gray-100" />
+        <div className="h-24 animate-pulse rounded bg-gray-100" />
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="rounded border border-rose-300 bg-rose-50 p-4 text-sm text-rose-800">
+        <h2 className="text-base font-semibold">Admins only.</h2>
+        <p className="mt-1">
+          You don&apos;t have access to the curator admin console.
+        </p>
+        <p className="mt-1">
+          Switch to <code>admin@org</code> in the top-right picker (POC) or
+          contact your platform team.
+        </p>
+        {error ? (
+          <p className="mt-2 text-xs text-rose-700/80">
+            (probe error: {String(error)})
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+}

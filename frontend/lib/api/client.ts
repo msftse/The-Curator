@@ -1,18 +1,19 @@
 // Typed fetch wrapper that injects X-User-Email from localStorage (stub auth).
+import { curator } from "./curator";
 import type {
   ClassificationPatch,
   SkillListItem,
   UploadResponse,
 } from "./types";
 
-const BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+export const BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
 function getStubUser(): string {
   if (typeof window === "undefined") return "anon@org";
   return window.localStorage.getItem("x-user-email") ?? "anon@org";
 }
 
-async function call<T>(
+export async function call<T>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
@@ -30,6 +31,27 @@ async function call<T>(
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
+}
+
+/** Same as `call` but returns the raw text body (used for text/markdown endpoints). */
+export async function callText(
+  path: string,
+  init: RequestInit = {},
+): Promise<string> {
+  const headers = new Headers(init.headers);
+  headers.set("X-User-Email", getStubUser());
+  const res = await fetch(`${BASE}${path}`, { ...init, headers });
+  if (!res.ok) {
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      body = await res.text();
+    }
+    throw new Error(`API ${res.status}: ${JSON.stringify(body)}`);
+  }
+  if (res.status === 204) return "";
+  return await res.text();
 }
 
 export const api = {
@@ -89,4 +111,5 @@ export const api = {
       return `${BASE}/v1/skills/${skillId}/download`;
     },
   },
+  curator,
 };
