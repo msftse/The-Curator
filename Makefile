@@ -3,7 +3,7 @@ PY := python
 UVICORN := uvicorn
 PNPM := pnpm
 
-.PHONY: help up down api worker web seed wait test test-unit test-integration lint format typecheck demo
+.PHONY: help up down api worker curator web seed wait test test-unit test-integration lint format typecheck demo curator-run curator-dry-run curator-status janitor
 
 help:
 	@echo "Common targets:"
@@ -36,6 +36,21 @@ api:
 
 worker:
 	$(PY) -m backend.workers.classifier
+
+curator:
+	$(PY) -m backend.workers.curator_scheduler
+
+curator-run:
+	curl -fsS -X POST -H "X-User-Email: admin@example.com" http://localhost:8000/v1/admin/curator/run | jq
+
+curator-dry-run:
+	curl -fsS -X POST -H "X-User-Email: admin@example.com" "http://localhost:8000/v1/admin/curator/run?dry_run=true" | jq
+
+curator-status:
+	curl -fsS -H "X-User-Email: admin@example.com" http://localhost:8000/v1/admin/curator/status | jq
+
+janitor:
+	curl -fsS -X POST -H "X-User-Email: admin@example.com" http://localhost:8000/v1/admin/curator/janitor | jq
 
 web:
 	$(PNPM) --filter frontend dev

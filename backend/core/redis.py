@@ -50,6 +50,14 @@ def key_lock_publish(skill_id: str) -> str:
     return f"lock:publish:{skill_id}"
 
 
+def key_curator_run_lock() -> str:
+    return "lock:curator:run"
+
+
+def key_curator_pause() -> str:
+    return "curator:paused"
+
+
 # ----- Distributed lock -----
 
 

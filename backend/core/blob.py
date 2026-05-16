@@ -23,11 +23,12 @@ def get_blob_service(settings: Settings) -> BlobServiceClient:
 
 
 async def ensure_containers(svc: BlobServiceClient, settings: Settings) -> None:
-    """Create published / archive / snapshots containers idempotently."""
+    """Create published / archive / snapshots / curator containers idempotently."""
     for name in (
         settings.blob_published_container,
         settings.blob_archive_container,
         settings.blob_snapshots_container,
+        settings.curator_reports_container,
     ):
         container = svc.get_container_client(name)
         try:

@@ -7,13 +7,23 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import RedirectResponse
 from redis.asyncio import Redis
 
-from backend.core.auth import Principal, get_principal
+from backend.core.auth import Principal, get_principal, require_scope
+from backend.core.auth.models import principal_actor
 from backend.core.blob import signed_download_url
 from backend.core.config import Settings
-from backend.core.deps import get_redis_client, get_skills_container, settings_dep
+from backend.core.deps import (
+    get_redis_client,
+    get_skills_container,
+    get_usage_container,
+    settings_dep,
+)
 from backend.core.errors import NotImplementedM0, SkillNotFound
 from backend.models.api import SkillListItem
+from backend.models.curator import UsageEvent, UsageEventDoc
 from backend.services import catalog as catalog_svc
+from backend.services import usage as usage_svc
+
+_require_usage_write = require_scope("usage:write")
 
 router = APIRouter(prefix="/v1/skills", tags=["catalog"])
 
@@ -85,6 +95,35 @@ async def list_versions(skill_id: str) -> None:
     raise NotImplementedM0("versions endpoint will land in M2")
 
 
-@router.post("/{skill_id}/usage")
-async def report_usage(skill_id: str) -> None:
-    raise NotImplementedM0("usage ingestion will land in M2")
+@router.post("/{skill_id}/usage", response_model=UsageEventDoc)
+async def report_usage(
+    skill_id: str,
+    body: UsageEvent,
+    principal: Principal = Depends(_require_usage_write),
+    settings: Settings = Depends(settings_dep),
+    skills: ContainerProxy = Depends(get_skills_container),
+    usage: ContainerProxy = Depends(get_usage_container),
+    redis: Redis = Depends(get_redis_client),
+) -> UsageEventDoc:
+    doc = await catalog_svc.get_skill(
+        skill_id=skill_id,
+        skills=skills,
+        redis=redis,
+        settings=settings,
+    )
+    if doc is None:
+        raise SkillNotFound(f"skill {skill_id!r} not found")
+    actor = principal_actor(principal)
+    return await usage_svc.record_usage_event(
+        skill_id=skill_id,
+        version=doc.version,
+        loader_id=body.loader_id or actor,
+        context=body.context,
+        skills=skills,
+        usage=usage,
+        redis=redis,
+        settings=settings,
+    )
+
+
+_ = NotImplementedM0  # retained for compatibility with other handlers

@@ -77,6 +77,24 @@ class MissingScope(DomainError):
     http_status = status.HTTP_403_FORBIDDEN
 
 
+# ---- M2 — Curator ----
+
+
+class CuratorPaused(DomainError):
+    error_code = "CURATOR_PAUSED"
+    http_status = status.HTTP_409_CONFLICT
+
+
+class SnapshotNotFound(DomainError):
+    error_code = "SNAPSHOT_NOT_FOUND"
+    http_status = status.HTTP_404_NOT_FOUND
+
+
+class RestoreFailed(DomainError):
+    error_code = "RESTORE_FAILED"
+    http_status = status.HTTP_500_INTERNAL_SERVER_ERROR
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(DomainError)
     async def _domain_handler(_: Request, exc: DomainError) -> JSONResponse:

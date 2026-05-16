@@ -87,6 +87,18 @@ class Settings(BaseSettings):
     cache_item_ttl_seconds: int = 300
     publish_lock_ttl_seconds: int = 30
 
+    # ---- Curator (M2) ----
+    curator_stale_days: int = 30
+    curator_archive_days: int = 90
+    curator_lock_ttl_seconds: int = 1800
+    curator_snapshot_retention: int = 5
+    curator_schedule_cron: str = "0 3 * * *"
+    curator_runs_container_prefix: str = "runs"
+    curator_snapshots_retired_prefix: str = "_retired"
+    curator_reports_container: str = "curator"
+    usage_loaders_30d_window_days: int = 30
+    janitor_classifier_stale_multiplier: int = 5
+
     def manager_email_set(self) -> set[str]:
         return {e.strip().lower() for e in self.manager_emails.split(",") if e.strip()}
 

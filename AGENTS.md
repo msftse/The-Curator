@@ -101,6 +101,8 @@ Admin commands: `pause`, `resume`, `run --dry-run`, `run`, `rollback`, `pin`, `u
 
 If you are tempted to add a delete code path anywhere near skills or bundles: stop, re-read this section, and write archival logic instead.
 
+This invariant is enforced statically by `backend/tests/unit/test_never_delete_invariant.py`, which AST-scans the curator/rollback/snapshot/usage/janitor service + worker files for `delete_item(...)` and `delete_blob(...)` calls. Adding either is a hard test failure.
+
 ---
 
 ## 6. Local-First Dev Loop

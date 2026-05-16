@@ -21,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api import admin as admin_router
 from backend.api import api_keys as api_keys_router
+from backend.api import curator as curator_router
 from backend.api import skills as skills_router
 from backend.api import uploads as uploads_router
 from backend.core import blob as blob_core
@@ -95,6 +96,7 @@ def create_app() -> FastAPI:
     app.include_router(uploads_router.router)
     app.include_router(admin_router.router)
     app.include_router(api_keys_router.router)
+    app.include_router(curator_router.router)
     app.include_router(skills_router.router)
 
     @app.get("/healthz", response_model=HealthResponse)

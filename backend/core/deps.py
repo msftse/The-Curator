@@ -17,6 +17,7 @@ from backend.core.cosmos import (
     API_KEYS_CONTAINER,
     AUDIT_CONTAINER,
     SKILLS_CONTAINER,
+    SYSTEM_STATE_CONTAINER,
     USAGE_EVENTS_CONTAINER,
     get_container,
 )
@@ -48,6 +49,10 @@ def get_usage_container(db: DatabaseProxy = Depends(get_db)) -> ContainerProxy:
 
 def get_api_keys_container(db: DatabaseProxy = Depends(get_db)) -> ContainerProxy:
     return get_container(db, API_KEYS_CONTAINER)
+
+
+def get_system_state_container(db: DatabaseProxy = Depends(get_db)) -> ContainerProxy:
+    return get_container(db, SYSTEM_STATE_CONTAINER)
 
 
 def settings_dep() -> Settings:

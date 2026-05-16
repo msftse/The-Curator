@@ -18,6 +18,7 @@ SKILLS_CONTAINER = "skills"
 AUDIT_CONTAINER = "audit"
 USAGE_EVENTS_CONTAINER = "usage_events"
 API_KEYS_CONTAINER = "api_keys"
+SYSTEM_STATE_CONTAINER = "system_state"
 USAGE_EVENTS_TTL_SECONDS = 90 * 24 * 60 * 60  # 90 days
 
 
@@ -62,6 +63,11 @@ async def ensure_containers(client: CosmosClient, db_name: str) -> DatabaseProxy
     await db.create_container_if_not_exists(
         id=API_KEYS_CONTAINER,
         partition_key=PartitionKey(path="/key_id"),
+    )
+    # M2 — system-wide ephemeral state (curator pause flag, etc.).
+    await db.create_container_if_not_exists(
+        id=SYSTEM_STATE_CONTAINER,
+        partition_key=PartitionKey(path="/key"),
     )
     return db
 
