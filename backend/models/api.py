@@ -47,6 +47,16 @@ class RejectRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=2000)
 
 
+class ArchiveRequest(BaseModel):
+    """Body for admin manual archive (`POST /v1/admin/skills/{id}/archive`).
+
+    `reason` is required — every state transition writes an audit row and
+    the rationale lives there (matches the reject flow).
+    """
+
+    reason: str = Field(min_length=1, max_length=2000)
+
+
 class ApproveRequest(BaseModel):
     # M0 has no fields, but reserved for M1 (e.g. force_republish).
     pass

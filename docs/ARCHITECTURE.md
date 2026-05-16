@@ -215,6 +215,13 @@ Every state transition (`upload`, `classify`, `approve`, `reject`, `publish`, `a
 - `POST /v1/admin/skills/{id}/approve` — locks → publishes → audits.
 - `POST /v1/admin/skills/{id}/reject`.
 - `PATCH /v1/admin/skills/{id}/classification`.
+- `POST /v1/admin/skills/{id}/archive` — admin-issued manual archive of an
+  approved skill (soft delete). Body `{ "reason": "..." }`. Reuses the
+  curator's archive primitives: bundle copied to `archive/`, status flips
+  to `archived`, audit row written with `source=admin_manual`. Refuses
+  pinned (`SKILL_PINNED`) and non-approved skills
+  (`INVALID_STATUS_TRANSITION`). Recoverable via
+  `POST /v1/admin/curator/restore/{id}`. **Never deletes.**
 
 **Admin curator (M2)**
 - `POST /v1/admin/curator/{pause,resume}`.
@@ -241,6 +248,7 @@ All domain errors inherit from `DomainError` and serialize as `{ "error_code": "
 ```
 SKILL_NOT_FOUND, INVALID_BUNDLE, BUNDLE_TOO_LARGE, ALREADY_PUBLISHED, LOCK_UNAVAILABLE,
 FORBIDDEN, UNAUTHORIZED, INVALID_TOKEN, REVOKED_API_KEY, MISSING_SCOPE,
+SKILL_PINNED, INVALID_STATUS_TRANSITION,
 CURATOR_PAUSED, SNAPSHOT_NOT_FOUND, RESTORE_FAILED, CURATOR_RUN_REPORT_NOT_FOUND,
 REVIEW_PROPOSAL_NOT_FOUND, REVIEW_PROPOSAL_STALE, REVIEW_PROPOSAL_NOT_PENDING,
 LLM_PROVIDER_ERROR

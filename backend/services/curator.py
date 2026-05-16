@@ -38,7 +38,12 @@ from redis.exceptions import RedisError
 
 from backend.core.blob import published_blob_path
 from backend.core.config import Settings
-from backend.core.errors import CuratorPaused
+from backend.core.errors import (
+    CuratorPaused,
+    InvalidStatusTransition,
+    SkillNotFound,
+    SkillPinned,
+)
 from backend.core.logging import bind, get_logger
 from backend.core.redis import (
     key_cache_item,
@@ -144,9 +149,7 @@ def plan_transitions(
 async def _load_candidate_docs(skills: ContainerProxy) -> list[SkillDoc]:
     query = "SELECT * FROM c WHERE c.status IN ('approved','stale')"
     out: list[SkillDoc] = []
-    async for raw in skills.query_items(
-        query=query
-    ):
+    async for raw in skills.query_items(query=query):
         try:
             out.append(SkillDoc.model_validate(raw))
         except Exception:  # noqa: BLE001
@@ -165,9 +168,9 @@ async def copy_published_to_archive(
 
     Public M3 surface — also called by ``curator_review_apply.apply_merge_proposal``.
     """
-    src = blob.get_container_client(
-        settings.blob_published_container
-    ).get_blob_client(published_blob_path(skill_id, version))
+    src = blob.get_container_client(settings.blob_published_container).get_blob_client(
+        published_blob_path(skill_id, version)
+    )
     try:
         downloader = await src.download_blob()
         data = await downloader.readall()
@@ -177,9 +180,9 @@ async def copy_published_to_archive(
             extra={"skill_id": skill_id, "version": version, "err": str(exc)},
         )
         return
-    dest = blob.get_container_client(
-        settings.blob_archive_container
-    ).get_blob_client(published_blob_path(skill_id, version))
+    dest = blob.get_container_client(settings.blob_archive_container).get_blob_client(
+        published_blob_path(skill_id, version)
+    )
     await dest.upload_blob(data, overwrite=True)
 
 
@@ -215,9 +218,7 @@ async def execute_pass(
     ) as lock_token:
         snapshot_name: str | None = None
         if not dry_run:
-            manifest = await snapshot_svc.snapshot_published(
-                blob, settings, run_id=run_id
-            )
+            manifest = await snapshot_svc.snapshot_published(blob, settings, run_id=run_id)
             snapshot_name = manifest.run_id
 
         candidate_docs = await _load_candidate_docs(skills)
@@ -355,3 +356,117 @@ async def _apply_one(
         )
 
     return True
+
+
+# ---- Admin manual archive ----------------------------------------------
+#
+# Admins can archive a single approved skill on demand. Same primitives as
+# the deterministic curator pass (copy to archive/, flip Cosmos status,
+# audit, invalidate cache). NEVER deletes — AGENTS.md §5 still holds.
+#
+# Differences from the curator pass:
+#   - No snapshot. This is a single-skill op; rollback uses the existing
+#     curator restore endpoint (POST /v1/admin/curator/restore/{id}) which
+#     copies archive/→published/ and flips status back to approved.
+#   - No run-lock. The publish lock on `skill_id` is not held either —
+#     archive moves a *published* skill to archived; there's no concurrent
+#     publish to race with (publish targets pending/classified).
+#   - Refuses pinned skills with SkillPinned (operator must unpin first).
+#   - Refuses non-approved skills with InvalidStatusTransition. Pending /
+#     classified flow through reject; rejected / stale / archived have no
+#     `published/` bytes to move.
+
+
+async def archive_skill_now(
+    *,
+    skill_id: str,
+    actor: str,
+    actor_oid: str | None = None,
+    reason: str,
+    skills: ContainerProxy,
+    audit: ContainerProxy,
+    blob: BlobServiceClient,
+    redis: Redis,
+    settings: Settings,
+) -> SkillDoc:
+    """Admin-issued manual archive of a single approved skill.
+
+    Raises:
+      SkillNotFound: no doc for this skill_id.
+      SkillPinned: skill is pinned; operator must unpin first.
+      InvalidStatusTransition: skill is not in `approved` state.
+    """
+    bind(actor=actor, skill_id=skill_id)
+
+    # Re-read latest doc (same pattern as `_apply_one`).
+    rows: list[dict[str, Any]] = []
+    async for raw in skills.query_items(
+        query="SELECT * FROM c WHERE c.skill_id=@id ORDER BY c.uploaded_at DESC",
+        parameters=[{"name": "@id", "value": skill_id}],
+        partition_key=skill_id,
+    ):
+        rows.append(raw)
+        break
+    if not rows:
+        raise SkillNotFound(f"skill {skill_id!r} not found")
+
+    current = SkillDoc.model_validate(rows[0])
+
+    if current.pinned:
+        raise SkillPinned(
+            f"skill {skill_id!r} is pinned; unpin before archiving",
+            metadata={"pinned_by": current.pinned_by},
+        )
+    if current.status != "approved":
+        raise InvalidStatusTransition(
+            f"skill {skill_id!r} has status={current.status!r}; "
+            f"admin archive only operates on 'approved' skills",
+            metadata={"status": current.status},
+        )
+
+    # 1. Blob mutation — copy published → archive (leaves source for
+    # defense-in-depth; catalog filters by status so archived skills
+    # disappear from public listings regardless).
+    await copy_published_to_archive(
+        blob,
+        settings,
+        skill_id=current.skill_id,
+        version=current.version,
+    )
+
+    # 2. Cosmos write — SOURCE OF TRUTH FLIP.
+    def _flip(body: dict[str, Any]) -> dict[str, Any]:
+        d = SkillDoc.model_validate(body)
+        d.status = "archived"
+        return d.model_dump(mode="json")
+
+    updated_raw = await replace_with_etag_retry(
+        skills,
+        item_id=current.id,
+        partition_key=current.skill_id,
+        mutate=_flip,
+    )
+    updated = SkillDoc.model_validate(updated_raw)
+
+    # 3. Audit (never silently destroy — reason is required at the API layer).
+    with contextlib.suppress(Exception):
+        await audit_svc.record(
+            audit,
+            skill_id=current.skill_id,
+            action="archive",
+            actor=actor,
+            actor_oid=actor_oid,
+            before={"status": "approved"},
+            after={"status": "archived"},
+            metadata={
+                "reason": reason,
+                "source": "admin_manual",
+                "version": current.version,
+            },
+        )
+
+    # 4. Cache invalidation — LAST, non-fatal (rule #2).
+    with contextlib.suppress(RedisError, Exception):
+        await redis.delete(key_cache_list(), key_cache_item(current.skill_id))
+
+    return updated

@@ -31,6 +31,7 @@ _GUARDED_FILES = [
     "backend/services/snapshot.py",
     "backend/services/usage.py",
     "backend/services/janitor.py",
+    "backend/api/admin.py",
     "backend/api/curator.py",
     "backend/workers/curator_scheduler.py",
     # M3 — curator LLM review modules.

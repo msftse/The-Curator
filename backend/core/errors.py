@@ -42,6 +42,27 @@ class AlreadyPublished(DomainError):
     http_status = status.HTTP_409_CONFLICT
 
 
+class SkillPinned(DomainError):
+    """Admin attempted a curator-equivalent op (e.g. manual archive) on a pinned skill.
+
+    Pinning is absolute per AGENTS.md §5: pinned skills are immune to every
+    auto-transition AND to admin-issued archival. Operator must unpin first.
+    """
+
+    error_code = "SKILL_PINNED"
+    http_status = status.HTTP_409_CONFLICT
+
+
+class InvalidStatusTransition(DomainError):
+    """Caller asked for a state transition the current status does not allow.
+
+    Used by admin archive when status != 'approved' (and analogous flows).
+    """
+
+    error_code = "INVALID_STATUS_TRANSITION"
+    http_status = status.HTTP_409_CONFLICT
+
+
 class LockUnavailable(DomainError):
     error_code = "LOCK_UNAVAILABLE"
     http_status = status.HTTP_423_LOCKED

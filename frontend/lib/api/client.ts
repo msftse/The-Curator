@@ -179,6 +179,17 @@ export const api = {
         },
       );
     },
+    archive(skillId: string, reason: string): Promise<SkillListItem> {
+      // Admin-issued manual archive. Soft delete: bytes go to archive/,
+      // status flips to "archived", restorable via curator.restore().
+      // Backend rejects pinned skills (SKILL_PINNED) and non-approved
+      // statuses (INVALID_STATUS_TRANSITION).
+      return call<SkillListItem>(`/v1/admin/skills/${skillId}/archive`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+    },
   },
   catalog: {
     list(): Promise<SkillListItem[]> {

@@ -6,6 +6,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import type { SkillDetail } from "@/lib/api/types";
 
 import { DownloadButton } from "./DownloadButton";
+import { SkillDetailAdminActions } from "./SkillDetailAdminActions";
 
 export function SkillDetailHeader({ skill }: { skill: SkillDetail }) {
   const hasBundle = skill.bundle !== null && skill.status === "approved";
@@ -50,6 +51,7 @@ export function SkillDetailHeader({ skill }: { skill: SkillDetail }) {
             </span>
           )}
           <code className="text-[11px] text-muted">{skill.skill_id}</code>
+          <SkillDetailAdminActions skill={skill} />
         </div>
       </div>
     </header>
