@@ -154,13 +154,17 @@ async def _load_candidate_docs(skills: ContainerProxy) -> list[SkillDoc]:
     return out
 
 
-async def _copy_to_archive(
+async def copy_published_to_archive(
     blob: BlobServiceClient,
     settings: Settings,
     *,
     skill_id: str,
     version: str,
 ) -> None:
+    """Copy a published bundle into the archive container (never deletes source).
+
+    Public M3 surface — also called by ``curator_review_apply.apply_merge_proposal``.
+    """
     src = blob.get_container_client(
         settings.blob_published_container
     ).get_blob_client(published_blob_path(skill_id, version))
@@ -177,6 +181,10 @@ async def _copy_to_archive(
         settings.blob_archive_container
     ).get_blob_client(published_blob_path(skill_id, version))
     await dest.upload_blob(data, overwrite=True)
+
+
+# Backward-compat alias for the prior private name.
+_copy_to_archive = copy_published_to_archive
 
 
 async def execute_pass(

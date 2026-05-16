@@ -99,6 +99,38 @@ class Settings(BaseSettings):
     usage_loaders_30d_window_days: int = 30
     janitor_classifier_stale_multiplier: int = 5
 
+    # ---- Aux model: curator review (M3) ----
+    # Provider toggle (only "foundry" or test-only "fake" supported).
+    curator_review_provider: Literal["foundry", "fake"] = "foundry"
+
+    # Azure AI Foundry endpoint config.
+    foundry_endpoint: str = ""             # e.g. "https://my-foundry.services.ai.azure.com/models"
+    foundry_deployment: str = ""           # deployment name or model id
+    foundry_api_version: str = "2024-08-01-preview"
+
+    # Auth: prefer Managed Identity in Azure; fall back to API key for local dev only.
+    azure_ai_foundry_api_key: str = ""
+
+    # Per-call token caps (passed to the Foundry SDK; truncation happens at the model).
+    curator_review_max_input_tokens: int = 6000
+    curator_review_max_output_tokens: int = 1500
+
+    # Per-run hard caps. Breach => abort + record aborted_reason="cost_cap".
+    curator_review_max_skills_per_run: int = 50
+    curator_review_max_total_tokens_per_run: int = 400_000
+
+    # Candidate filter knobs.
+    curator_review_agent_uploader_prefix: str = "agent:"
+    curator_review_consolidation_min_cosine: float = 0.75
+    curator_review_consolidation_max_pairs: int = 20
+
+    # Schedule for the optional second cron job.
+    curator_review_schedule_cron: str = "30 3 * * *"
+    curator_review_enabled: bool = False  # off by default; enable per-env.
+
+    # Subfolder under {curator_reports_container} for review reports.
+    curator_reviews_prefix: str = "reviews"
+
     def manager_email_set(self) -> set[str]:
         return {e.strip().lower() for e in self.manager_emails.split(",") if e.strip()}
 

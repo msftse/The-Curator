@@ -23,6 +23,7 @@ from backend.core.blob import get_blob_service
 from backend.core.config import get_settings
 from backend.core.cosmos import (
     AUDIT_CONTAINER,
+    REVIEW_PROPOSALS_CONTAINER,
     SKILLS_CONTAINER,
     SYSTEM_STATE_CONTAINER,
     ensure_containers,
@@ -33,6 +34,8 @@ from backend.core.errors import CuratorPaused, LockUnavailable
 from backend.core.logging import configure_logging, get_logger
 from backend.core.redis import get_redis
 from backend.services import curator as curator_svc
+from backend.services import curator_review as curator_review_svc
+from backend.services.llm import FoundryLLMProvider, LLMProvider
 
 log = get_logger(__name__)
 
@@ -60,9 +63,25 @@ async def run_forever() -> None:
     skills = get_container(db, SKILLS_CONTAINER)
     audit = get_container(db, AUDIT_CONTAINER)
     system_state = get_container(db, SYSTEM_STATE_CONTAINER)
+    review_proposals = get_container(db, REVIEW_PROPOSALS_CONTAINER)
 
     sleep_s = _sleep_seconds_from_cron(settings.curator_schedule_cron)
     log.info("curator_scheduler_started", extra={"sleep_s": sleep_s})
+
+    review_provider: LLMProvider | None = None
+    if settings.curator_review_enabled:
+        try:
+            review_provider = FoundryLLMProvider(settings)
+            log.info(
+                "curator_review_scheduler_armed",
+                extra={"cron": settings.curator_review_schedule_cron},
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "curator_review_scheduler_disabled",
+                extra={"err": str(exc)},
+            )
+            review_provider = None
 
     stop = asyncio.Event()
 
@@ -97,6 +116,32 @@ async def run_forever() -> None:
                 log.info("curator_scheduler_lock_busy")
             except Exception as exc:  # noqa: BLE001
                 log.exception("curator_scheduler_error", extra={"err": str(exc)})
+
+            if review_provider is not None:
+                try:
+                    review_rec = await curator_review_svc.execute_review_pass(
+                        provider=review_provider,
+                        skills=skills,
+                        audit=audit,
+                        review_proposals=review_proposals,
+                        system_state=system_state,
+                        blob=blob,
+                        redis=redis,
+                        settings=settings,
+                        actor="system:curator-review-scheduler",
+                    )
+                    log.info(
+                        "curator_review_scheduler_pass_done",
+                        extra={
+                            "run_id": review_rec.run_id,
+                            "proposals": review_rec.proposals_emitted,
+                            "aborted_reason": review_rec.aborted_reason,
+                        },
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    log.exception(
+                        "curator_review_scheduler_error", extra={"err": str(exc)}
+                    )
 
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(stop.wait(), timeout=sleep_s)

@@ -21,12 +21,18 @@ from backend.core.config import Settings
 from backend.core.deps import (
     get_audit_container,
     get_blob,
+    get_llm_provider,
     get_redis_client,
+    get_review_proposals_container,
     get_skills_container,
     get_system_state_container,
     settings_dep,
 )
-from backend.core.errors import SkillNotFound
+from backend.core.errors import (
+    ReviewProposalNotFound,
+    ReviewProposalNotPending,
+    SkillNotFound,
+)
 from backend.core.logging import get_logger
 from backend.core.redis import (
     key_cache_item,
@@ -36,12 +42,23 @@ from backend.core.redis import (
 )
 from backend.models.api import SkillListItem
 from backend.models.curator import CuratorRunRecord, CuratorStatus, RollbackResult
+from backend.models.review import (
+    CuratorReviewRunRecord,
+    ReviewListResponse,
+    ReviewProposal,
+)
 from backend.models.skill import SkillDoc
 from backend.services import (
     catalog as catalog_svc,
 )
 from backend.services import (
     curator as curator_svc,
+)
+from backend.services import (
+    curator_review as curator_review_svc,
+)
+from backend.services import (
+    curator_review_apply as curator_review_apply_svc,
 )
 from backend.services import (
     curator_rollback as curator_rollback_svc,
@@ -53,6 +70,7 @@ from backend.services import (
     janitor as janitor_svc,
 )
 from backend.services.cosmos_helpers import replace_with_etag_retry
+from backend.services.llm import LLMProvider
 
 router = APIRouter(prefix="/v1/admin/curator", tags=["curator"])
 log = get_logger(__name__)
@@ -359,6 +377,151 @@ async def janitor(
         audit=audit,
         redis=redis,
         settings=settings,
+    )
+
+
+# ---- M3 — Curator LLM review endpoints ---------------------------------
+
+
+@router.post("/review", response_model=CuratorReviewRunRecord)
+async def run_review(
+    user: User = Depends(_require_admin),
+    settings: Settings = Depends(settings_dep),
+    provider: LLMProvider = Depends(get_llm_provider),
+    skills: ContainerProxy = Depends(get_skills_container),
+    audit: ContainerProxy = Depends(get_audit_container),
+    review_proposals: ContainerProxy = Depends(get_review_proposals_container),
+    system_state: ContainerProxy = Depends(get_system_state_container),
+    blob: BlobServiceClient = Depends(get_blob),
+    redis: Redis = Depends(get_redis_client),
+) -> CuratorReviewRunRecord:
+    return await curator_review_svc.execute_review_pass(
+        provider=provider,
+        skills=skills,
+        audit=audit,
+        review_proposals=review_proposals,
+        system_state=system_state,
+        blob=blob,
+        redis=redis,
+        settings=settings,
+        actor=user.email,
+    )
+
+
+@router.get("/reviews", response_model=ReviewListResponse)
+async def list_reviews(
+    status: str | None = Query(None),
+    run_id: str | None = Query(None),
+    limit: int = Query(100, le=500),
+    _user: User = Depends(_require_admin),
+    review_proposals: ContainerProxy = Depends(get_review_proposals_container),
+) -> ReviewListResponse:
+    where: list[str] = []
+    params: list[dict[str, Any]] = []
+    if status:
+        where.append("c.status=@status")
+        params.append({"name": "@status", "value": status})
+    if run_id:
+        where.append("c.run_id=@run_id")
+        params.append({"name": "@run_id", "value": run_id})
+    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+    query = (
+        f"SELECT * FROM c{where_sql} ORDER BY c.created_at DESC "
+        f"OFFSET 0 LIMIT @limit"
+    )
+    params.append({"name": "@limit", "value": int(limit)})
+
+    proposals: list[ReviewProposal] = []
+    async for raw in review_proposals.query_items(
+        query=query,
+        parameters=params,
+        enable_cross_partition_query=True,
+    ):
+        with contextlib.suppress(Exception):
+            proposals.append(ReviewProposal.model_validate(raw))
+    return ReviewListResponse(proposals=proposals, total=len(proposals))
+
+
+@router.get("/reviews/{proposal_id}", response_model=ReviewProposal)
+async def get_review(
+    proposal_id: str,
+    run_id: str = Query(...),
+    _user: User = Depends(_require_admin),
+    review_proposals: ContainerProxy = Depends(get_review_proposals_container),
+) -> ReviewProposal:
+    try:
+        raw = await review_proposals.read_item(item=proposal_id, partition_key=run_id)
+    except Exception as exc:  # noqa: BLE001
+        raise ReviewProposalNotFound(
+            f"proposal {proposal_id!r} (run_id={run_id!r}) not found"
+        ) from exc
+    return ReviewProposal.model_validate(raw)
+
+
+@router.post("/reviews/{proposal_id}/approve", response_model=ReviewProposal)
+async def approve_review(
+    proposal_id: str,
+    run_id: str = Query(...),
+    user: User = Depends(_require_admin),
+    settings: Settings = Depends(settings_dep),
+    skills: ContainerProxy = Depends(get_skills_container),
+    audit: ContainerProxy = Depends(get_audit_container),
+    review_proposals: ContainerProxy = Depends(get_review_proposals_container),
+    blob: BlobServiceClient = Depends(get_blob),
+    redis: Redis = Depends(get_redis_client),
+) -> ReviewProposal:
+    try:
+        raw = await review_proposals.read_item(item=proposal_id, partition_key=run_id)
+    except Exception as exc:  # noqa: BLE001
+        raise ReviewProposalNotFound(
+            f"proposal {proposal_id!r} (run_id={run_id!r}) not found"
+        ) from exc
+    proposal = ReviewProposal.model_validate(raw)
+    if proposal.kind == "patch":
+        return await curator_review_apply_svc.apply_patch_proposal(
+            proposal_id=proposal_id,
+            run_id=run_id,
+            actor=user.email,
+            settings=settings,
+            skills=skills,
+            audit=audit,
+            review_proposals=review_proposals,
+            blob=blob,
+            redis=redis,
+        )
+    if proposal.kind == "merge":
+        return await curator_review_apply_svc.apply_merge_proposal(
+            proposal_id=proposal_id,
+            run_id=run_id,
+            actor=user.email,
+            settings=settings,
+            skills=skills,
+            audit=audit,
+            review_proposals=review_proposals,
+            blob=blob,
+            redis=redis,
+        )
+    raise ReviewProposalNotPending(
+        f"proposal kind={proposal.kind!r} cannot be applied"
+    )
+
+
+@router.post("/reviews/{proposal_id}/reject", response_model=ReviewProposal)
+async def reject_review(
+    proposal_id: str,
+    run_id: str = Query(...),
+    reason: str = Query(""),
+    user: User = Depends(_require_admin),
+    audit: ContainerProxy = Depends(get_audit_container),
+    review_proposals: ContainerProxy = Depends(get_review_proposals_container),
+) -> ReviewProposal:
+    return await curator_review_apply_svc.reject_proposal(
+        proposal_id=proposal_id,
+        run_id=run_id,
+        actor=user.email,
+        reason=reason,
+        review_proposals=review_proposals,
+        audit=audit,
     )
 
 

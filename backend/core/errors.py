@@ -95,6 +95,29 @@ class RestoreFailed(DomainError):
     http_status = status.HTTP_500_INTERNAL_SERVER_ERROR
 
 
+# ---- M3 — Curator LLM review ----
+
+
+class ReviewProposalNotFound(DomainError):
+    error_code = "REVIEW_PROPOSAL_NOT_FOUND"
+    http_status = status.HTTP_404_NOT_FOUND
+
+
+class ReviewProposalStale(DomainError):
+    error_code = "REVIEW_PROPOSAL_STALE"
+    http_status = status.HTTP_409_CONFLICT
+
+
+class ReviewProposalNotPending(DomainError):
+    error_code = "REVIEW_PROPOSAL_NOT_PENDING"
+    http_status = status.HTTP_409_CONFLICT
+
+
+class LLMProviderError(DomainError):
+    error_code = "LLM_PROVIDER_ERROR"
+    http_status = status.HTTP_502_BAD_GATEWAY
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(DomainError)
     async def _domain_handler(_: Request, exc: DomainError) -> JSONResponse:

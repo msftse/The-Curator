@@ -33,6 +33,15 @@ _GUARDED_FILES = [
     "backend/services/janitor.py",
     "backend/api/curator.py",
     "backend/workers/curator_scheduler.py",
+    # M3 — curator LLM review modules.
+    "backend/services/curator_review.py",
+    "backend/services/curator_review_apply.py",
+    "backend/services/curator_review_prompts.py",
+    "backend/services/curator_review_similarity.py",
+    "backend/services/curator_review_report.py",
+    "backend/services/llm/provider.py",
+    "backend/services/llm/foundry.py",
+    "backend/services/llm/fake.py",
 ]
 
 _FORBIDDEN_ATTRS = {"delete_item", "delete_blob"}

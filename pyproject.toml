@@ -23,6 +23,8 @@ dependencies = [
     "opentelemetry-instrumentation-fastapi>=0.48b0",
     "opentelemetry-instrumentation-httpx>=0.48b0",
     "opentelemetry-instrumentation-redis>=0.48b0",
+    # M3 — Curator LLM review (Azure AI Foundry only).
+    "azure-ai-inference>=1.0.0b6,<2",
 ]
 
 [project.optional-dependencies]

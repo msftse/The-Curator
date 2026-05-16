@@ -16,11 +16,13 @@ from backend.core.config import Settings, get_settings
 from backend.core.cosmos import (
     API_KEYS_CONTAINER,
     AUDIT_CONTAINER,
+    REVIEW_PROPOSALS_CONTAINER,
     SKILLS_CONTAINER,
     SYSTEM_STATE_CONTAINER,
     USAGE_EVENTS_CONTAINER,
     get_container,
 )
+from backend.services.llm import FakeLLMProvider, FoundryLLMProvider, LLMProvider
 
 
 def get_db(request: Request) -> DatabaseProxy:
@@ -55,5 +57,38 @@ def get_system_state_container(db: DatabaseProxy = Depends(get_db)) -> Container
     return get_container(db, SYSTEM_STATE_CONTAINER)
 
 
+def get_review_proposals_container(
+    db: DatabaseProxy = Depends(get_db),
+) -> ContainerProxy:
+    return get_container(db, REVIEW_PROPOSALS_CONTAINER)
+
+
 def settings_dep() -> Settings:
     return get_settings()
+
+
+# ---- LLM provider DI (M3) -----------------------------------------------
+
+_llm_provider_instance: LLMProvider | None = None
+
+
+def _build_llm_provider(settings: Settings) -> LLMProvider:
+    if settings.curator_review_provider == "fake":
+        # Tests override via ``app.dependency_overrides[get_llm_provider]``;
+        # this default is empty-canned and will raise on first call (which
+        # surfaces misconfiguration loudly).
+        return FakeLLMProvider(canned=[])
+    return FoundryLLMProvider(settings)
+
+
+def get_llm_provider(settings: Settings = Depends(settings_dep)) -> LLMProvider:
+    global _llm_provider_instance
+    if _llm_provider_instance is None:
+        _llm_provider_instance = _build_llm_provider(settings)
+    return _llm_provider_instance
+
+
+def reset_llm_provider_singleton() -> None:
+    """Test helper — drops the cached provider so the next call rebuilds it."""
+    global _llm_provider_instance
+    _llm_provider_instance = None

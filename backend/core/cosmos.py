@@ -19,6 +19,7 @@ AUDIT_CONTAINER = "audit"
 USAGE_EVENTS_CONTAINER = "usage_events"
 API_KEYS_CONTAINER = "api_keys"
 SYSTEM_STATE_CONTAINER = "system_state"
+REVIEW_PROPOSALS_CONTAINER = "review_proposals"
 USAGE_EVENTS_TTL_SECONDS = 90 * 24 * 60 * 60  # 90 days
 
 
@@ -68,6 +69,11 @@ async def ensure_containers(client: CosmosClient, db_name: str) -> DatabaseProxy
     await db.create_container_if_not_exists(
         id=SYSTEM_STATE_CONTAINER,
         partition_key=PartitionKey(path="/key"),
+    )
+    # M3 — Curator LLM review proposals (PK /run_id for cheap per-run listing).
+    await db.create_container_if_not_exists(
+        id=REVIEW_PROPOSALS_CONTAINER,
+        partition_key=PartitionKey(path="/run_id"),
     )
     return db
 

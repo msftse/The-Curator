@@ -26,6 +26,11 @@ AuditAction = Literal[
     # M1 — API key lifecycle.
     "apikey_issue",
     "apikey_revoke",
+    # M3 — Curator LLM review lifecycle.
+    "patch_apply",
+    "merge_apply",
+    "review_run",
+    "review_reject",
 ]
 
 
