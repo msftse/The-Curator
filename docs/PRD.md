@@ -102,28 +102,61 @@ The hub solves: **single source of truth for skills + governance + lifecycle man
 ```
 ┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
 │  Next.js Web UI  │─────│   FastAPI API    │─────│   Cosmos DB      │
-│  (contributor +  │     │  (REST + auth)   │     │   (metadata,     │
-│   manager views) │     │                  │     │    pending,      │
-└──────────────────┘     └────────┬─────────┘     │    audit log)    │
-                                  │               └──────────────────┘
-                                  │
-                         ┌────────┼─────────┐
-                         │        │         │
-                         ▼        ▼         ▼
-              ┌──────────────┐ ┌────────────────┐ ┌─────────────────┐
-              │  Classifier  │ │  Blob Storage  │ │    Curator      │
-              │  Agent       │ │  (published    │ │  (background    │
-              │  (on upload) │ │   bundles,     │ │   maintenance)  │
-              └──────────────┘ │   snapshots)   │ └─────────────────┘
-                               └────────────────┘
+│  (contributor +  │     │  (REST + auth)   │◄───►│   (SoR: all      │
+│   manager views) │     │                  │     │    metadata,     │
+└──────────────────┘     └─┬──────┬──────┬──┘     │    audit, usage) │
+                           │      │      │        └──────────────────┘
+                           │      │      │
+              ┌────────────▼──┐ ┌─▼──────▼───┐  ┌─────────────────┐
+              │  Redis        │ │ Blob       │  │   Curator       │
+              │  (cache +     │ │ Storage    │  │   (background   │
+              │   classifier  │ │ (approved  │  │    maintenance) │
+              │   queue +     │ │  bundles,  │  └─────────────────┘
+              │   locks)      │ │  snapshots)│
+              └───────┬───────┘ └────────────┘
+                      │
+              ┌───────▼────────┐
+              │  Classifier    │
+              │  Worker        │
+              │  (BLPOP queue) │
+              └────────────────┘
 ```
 
 ### Storage split (deliberate)
 
-- **Cosmos DB (for NoSQL)** — system of record for all metadata: skill ID, version, status, classification, audit trail, usage counters, pinning state, pending submissions awaiting review.
+- **Cosmos DB (for NoSQL)** — system of record for all metadata: skill ID, version, status, classification, audit trail, usage counters, pinning state, pending submissions awaiting review. **All durable writes hit Cosmos first.**
+- **Redis (Azure Cache for Redis)** — read-through cache + ephemeral coordination layer. Never the only copy of anything.
 - **Blob Storage** — artifact store for approved bundles only. Each approved skill version becomes an immutable tar.gz at `published/{skill_id}/{version}/bundle.tar.gz`. Snapshots for rollback live under `snapshots/`.
 
-**Why split:** Cosmos for query/filter/index (categories, tags, search, audit), Blob for cheap immutable artifact hosting + CDN-frontable downloads. Single source of truth = Cosmos; Blob is regenerable from Cosmos + the original upload payload.
+**Why this split:** Cosmos for query/filter/index (categories, tags, search, audit), Redis for hot-path latency + queue + locks, Blob for cheap immutable artifact hosting + CDN-frontable downloads. Single source of truth = Cosmos; Redis is regenerable from Cosmos; Blob is regenerable from Cosmos + the original upload payload.
+
+### 7.1 Redis usage rules (non-negotiable)
+
+Redis earns its keep as a cache and coordination tool, not a database. To prevent it from quietly becoming a second source of truth:
+
+1. **Writes always hit Cosmos first.** Redis cache invalidation happens *after* the Cosmos write succeeds. Never write to Redis as the source of truth.
+2. **Cache misses are normal, not errors.** If Redis is down, the app falls back to Cosmos directly. Slower, not broken. Every Redis read path must have a Cosmos fallback.
+3. **TTL everything in Redis.** No infinite-lived keys. Worst case, cache rebuilds in N seconds.
+4. **The classifier queue is the one place Redis temporarily holds in-flight data.** Mitigation: enable Redis persistence (AOF) for the queue, and the upload handler writes the pending doc to Cosmos *before* pushing the job to the Redis queue. If a queue message is lost, the doc still exists in Cosmos with `classifier_status=pending` and a janitor sweep re-queues it.
+
+### 7.2 What lives where
+
+| Concern | Store | Notes |
+|---------|-------|-------|
+| Skill metadata (pending → approved → archived) | Cosmos | Single doc per skill version |
+| Audit log | Cosmos | Append-only container, no updates |
+| Usage events (raw) | Cosmos | TTL 90 days |
+| Usage counters (aggregated) | Cosmos | Updated on event ingest |
+| Pinning state, classification, version history | Cosmos | On the skill doc |
+| Approved bundle bytes | Blob | Immutable, versioned |
+| Curator snapshots | Blob | tar.gz of skills tree before each pass |
+| Archived skill bundles | Blob | `archive/` prefix, recoverable |
+| Hot catalog list responses | Redis | 60s TTL, invalidated on publish/archive |
+| Single-skill metadata lookups | Redis | 5min TTL, invalidated on update |
+| Classifier job queue | Redis | List + BLPOP; AOF persistence enabled |
+| Rate limit counters | Redis | Sliding window with TTL |
+| Web UI session tokens | Redis | TTL = session lifetime |
+| Distributed locks (publish, curator) | Redis | SET NX with TTL; prevents double-publish |
 
 ### Lifecycle of a skill
 
@@ -284,13 +317,26 @@ published → active → stale (no usage 30d) → archived (no usage 90d, in Blo
 |-------|--------|-----|
 | Backend | FastAPI (Python 3.12) | Matches Hermes ecosystem, reuse skill validators, fast iteration |
 | Frontend | Next.js 14 + Tailwind | Solid defaults, SSR for SEO-free internal tool is fine, easy auth |
-| Database | Azure Cosmos DB for NoSQL | User-specified, fits JSON document model + global indexing |
+| Database (SoR) | Azure Cosmos DB for NoSQL | User-specified, fits JSON document model + global indexing |
+| Cache + queue | Azure Cache for Redis | Hot-path reads, classifier queue, rate limits, distributed locks. AOF persistence enabled. |
 | Object Storage | Azure Blob Storage | Cheap immutable artifacts, signed URLs, CDN-frontable |
 | Background jobs | Azure Functions (prod), Python worker process (local dev) | Async classifier + publish + curator |
 | Classifier agent | Reuses Hermes subagent pattern (small aux model) | Consistent with org's existing agent infra |
 | Auth | Entra ID (OIDC) for humans, API keys for agents | Standard Azure stack |
-| Local dev | Cosmos DB emulator + Azurite | Zero Azure spend for POC |
+| Local dev | Cosmos DB emulator + Azurite + redis:7 container | Zero Azure spend for POC |
 | Infra-as-code | Bicep (Azure native) | First-class Azure support |
+
+### Cost note (POC scale, monthly estimate)
+
+| Service | Tier | ~Cost |
+|---------|------|-------|
+| Cosmos DB | Serverless | ~$5–25 (pay per RU, low for internal tool) |
+| Blob Storage | LRS, cool tier for archive | ~$1–5 |
+| Azure Cache for Redis | Basic C0 (POC) / Standard C0 (prod) | ~$16 / ~$40 |
+| App Service / Functions | Consumption | ~$0–20 |
+| **Total** | | **<$100/mo for POC** |
+
+Redis is rounding error. Cosmos + Blob dominate. Scale knobs are well understood.
 
 ---
 

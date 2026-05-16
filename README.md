@@ -12,7 +12,8 @@ Internal web platform for submitting, reviewing, publishing, and maintaining reu
 
 - Backend: FastAPI (Python 3.12)
 - Frontend: Next.js 14 + Tailwind
-- Database: Azure Cosmos DB for NoSQL
-- Storage: Azure Blob Storage
+- Database (SoR): Azure Cosmos DB for NoSQL
+- Cache + queue: Azure Cache for Redis (hot reads, classifier queue, locks)
+- Storage: Azure Blob Storage (approved bundles, snapshots)
 - Auth: Entra ID (OIDC) + API keys for agent runtimes
-- Local dev: Cosmos DB emulator + Azurite
+- Local dev: Cosmos DB emulator + Azurite + redis:7 container
