@@ -41,6 +41,15 @@ export interface SkillListItem {
   pinned: boolean;
 }
 
+export interface SkillDetail extends SkillListItem {
+  skill_md_text: string | null;
+}
+
+export interface UsageEventBody {
+  loader_id: string;
+  context?: Record<string, unknown>;
+}
+
 export interface UploadResponse {
   skill_id: string;
   version: string;

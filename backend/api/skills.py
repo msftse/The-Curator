@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from azure.cosmos.aio import ContainerProxy
+from azure.storage.blob.aio import BlobServiceClient
 from fastapi import APIRouter, Depends
 from fastapi.responses import RedirectResponse
 from redis.asyncio import Redis
@@ -12,13 +13,14 @@ from backend.core.auth.models import principal_actor
 from backend.core.blob import signed_download_url
 from backend.core.config import Settings
 from backend.core.deps import (
+    get_blob,
     get_redis_client,
     get_skills_container,
     get_usage_container,
     settings_dep,
 )
 from backend.core.errors import NotImplementedM0, SkillNotFound
-from backend.models.api import SkillListItem
+from backend.models.api import SkillDetail, SkillListItem
 from backend.models.curator import UsageEvent, UsageEventDoc
 from backend.services import catalog as catalog_svc
 from backend.services import usage as usage_svc
@@ -38,14 +40,14 @@ async def list_skills(
     return await catalog_svc.list_approved(skills=skills, redis=redis, settings=settings)
 
 
-@router.get("/{skill_id}", response_model=SkillListItem)
+@router.get("/{skill_id}", response_model=SkillDetail)
 async def get_skill(
     skill_id: str,
     _principal: Principal = Depends(get_principal),
     settings: Settings = Depends(settings_dep),
     skills: ContainerProxy = Depends(get_skills_container),
     redis: Redis = Depends(get_redis_client),
-) -> SkillListItem:
+) -> SkillDetail:
     doc = await catalog_svc.get_skill(
         skill_id=skill_id,
         skills=skills,
@@ -54,7 +56,7 @@ async def get_skill(
     )
     if doc is None:
         raise SkillNotFound(f"skill {skill_id!r} not found")
-    return SkillListItem(
+    return SkillDetail(
         skill_id=doc.skill_id,
         version=doc.version,
         name=doc.name,
@@ -67,6 +69,7 @@ async def get_skill(
         classification=doc.classification,
         bundle=doc.bundle,
         pinned=doc.pinned,
+        skill_md_text=doc.skill_md_text,
     )
 
 
@@ -77,6 +80,7 @@ async def download_skill(
     settings: Settings = Depends(settings_dep),
     skills: ContainerProxy = Depends(get_skills_container),
     redis: Redis = Depends(get_redis_client),
+    blob: BlobServiceClient = Depends(get_blob),
 ) -> RedirectResponse:
     doc = await catalog_svc.get_skill(
         skill_id=skill_id,
@@ -86,7 +90,7 @@ async def download_skill(
     )
     if doc is None or doc.bundle is None or doc.status != "approved":
         raise SkillNotFound(f"skill {skill_id!r} not approved or has no bundle")
-    url = signed_download_url(settings, skill_id=skill_id, version=doc.version)
+    url = await signed_download_url(blob, settings, skill_id=skill_id, version=doc.version)
     return RedirectResponse(url=url, status_code=307)
 
 

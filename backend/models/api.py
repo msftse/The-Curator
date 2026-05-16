@@ -37,6 +37,12 @@ class SkillListItem(BaseModel):
     pinned: bool = False
 
 
+class SkillDetail(SkillListItem):
+    """Single-skill response. Adds rendered SKILL.md body for the catalog detail page."""
+
+    skill_md_text: str = ""
+
+
 class RejectRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=2000)
 

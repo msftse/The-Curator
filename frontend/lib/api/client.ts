@@ -19,8 +19,10 @@ import { InteractionRequiredAuthError } from "@azure/msal-browser";
 import { curator } from "./curator";
 import type {
   ClassificationPatch,
+  SkillDetail,
   SkillListItem,
   UploadResponse,
+  UsageEventBody,
 } from "./types";
 import {
   API_SCOPE,
@@ -182,11 +184,18 @@ export const api = {
     list(): Promise<SkillListItem[]> {
       return call<SkillListItem[]>("/v1/skills");
     },
-    get(skillId: string): Promise<SkillListItem> {
-      return call<SkillListItem>(`/v1/skills/${skillId}`);
+    get(skillId: string): Promise<SkillDetail> {
+      return call<SkillDetail>(`/v1/skills/${skillId}`);
     },
     downloadUrl(skillId: string): string {
       return `${BASE}/v1/skills/${skillId}/download`;
+    },
+    reportUsage(skillId: string, body: UsageEventBody): Promise<void> {
+      return call<void>(`/v1/skills/${skillId}/usage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
     },
   },
   curator,
