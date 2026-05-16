@@ -31,6 +31,9 @@ resource site 'Microsoft.Web/sites@2023-12-01' = {
   name: siteName
   location: location
   kind: 'app,linux'
+  tags: {
+    'azd-service-name': 'worker'
+  }
   identity: {
     type: 'SystemAssigned'
   }

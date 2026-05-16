@@ -17,6 +17,9 @@ var swaName = 'swa-${prefix}'
 resource swa 'Microsoft.Web/staticSites@2023-12-01' = {
   name: swaName
   location: location
+  tags: {
+    'azd-service-name': 'web'
+  }
   sku: {
     name: skuName
     tier: skuName

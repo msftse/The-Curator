@@ -147,6 +147,13 @@ class Settings(BaseSettings):
     # Auth: prefer Managed Identity in Azure; fall back to API key for local dev only.
     azure_ai_foundry_api_key: str = ""
 
+    # Some Foundry deployments (e.g. gpt-4o on certain API versions) reject the
+    # ``response_format={"type":"json_object"}`` kwarg with HTTP 400
+    # "Unsupported response_format". When False (default) the provider omits the
+    # kwarg and relies on the prompt + lenient JSON parsing. Flip to True only
+    # for deployments you have verified accept structured JSON mode.
+    foundry_supports_json_object: bool = False
+
     # Per-call token caps (passed to the Foundry SDK; truncation happens at the model).
     curator_review_max_input_tokens: int = 6000
     curator_review_max_output_tokens: int = 1500

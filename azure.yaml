@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+#
+# Azure Developer CLI manifest for Agentic Skill Hub.
+#
+# Usage:
+#   azd auth login
+#   azd env new dev              # env name MUST be one of: dev | staging | prod
+#                                # (enforced by infra/main.bicep `@allowed`)
+#   azd env set AZURE_LOCATION eastus
+#   azd env set AUTH_MODE stub   # OR oidc; if oidc, also set ENTRA_* env vars
+#   azd provision                # spin up infra only
+#   azd deploy                   # ship api + worker + web
+#   azd up                       # both, end to end
+#
+# Post-provision, Key Vault secrets are placeholders. Seed them before the
+# App Service starts serving real traffic — see infra/README.md §5.
+
+name: agentic-skill-hub
+metadata:
+  template: agentic-skill-hub@0.1.0
+
+infra:
+  provider: bicep
+  path: infra
+  module: main
+
+services:
+  api:
+    project: .
+    language: py
+    host: appservice
+
+  worker:
+    project: .
+    language: py
+    host: appservice
+
+  web:
+    project: ./frontend
+    language: ts
+    host: staticwebapp
+    dist: .next
