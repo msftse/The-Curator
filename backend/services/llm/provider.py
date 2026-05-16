@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 # Re-exported so callers can ``from backend.services.llm import LLMProviderError``.
 from backend.core.errors import LLMProviderError  # noqa: F401
@@ -28,6 +28,14 @@ class LLMResult:
     model_id: str
 
 
+# `response_format` accepts the legacy literals ("text"/"json_object") for the
+# curator and an opt-in Pydantic model class for structured outputs. When a
+# model class is passed, MAF validates the response against it server-side
+# (Azure AI Foundry structured outputs); the returned `LLMResult.text` is
+# still the raw JSON string, so callers can parse with `Model.model_validate_json`.
+ResponseFormat = Literal["text", "json_object"] | type[Any]
+
+
 class LLMProvider(ABC):
     @abstractmethod
     async def complete(
@@ -37,6 +45,6 @@ class LLMProvider(ABC):
         user: str,
         max_input_tokens: int,
         max_output_tokens: int,
-        response_format: Literal["text", "json_object"] = "json_object",
+        response_format: ResponseFormat = "json_object",
         temperature: float = 0.0,
     ) -> LLMResult: ...

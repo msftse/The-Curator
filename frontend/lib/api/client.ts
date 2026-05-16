@@ -25,14 +25,25 @@ import type {
   UsageEventBody,
 } from "./types";
 import {
-  API_SCOPE,
-  IS_OIDC,
+  apiScope,
+  isOidc,
   buildLoginRequest,
   buildSilentRequest,
   getMsal,
 } from "@/lib/auth/msal";
+import { apiBase } from "@/lib/env";
 
-export const BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+/**
+ * Backend base URL. Evaluated at call time so a single image can ship across
+ * envs — see `frontend/lib/env.ts` for the runtime injection mechanism.
+ *
+ * Exported as a function (not a constant) deliberately: importing modules
+ * that call `BASE()` will pick up the runtime value rather than freezing
+ * the build-time fallback.
+ */
+export function BASE(): string {
+  return apiBase();
+}
 
 function getStubUser(): string {
   if (typeof window === "undefined") return "anon@org";
@@ -80,7 +91,7 @@ async function acquireBearerToken(): Promise<string | null> {
 }
 
 async function attachAuthHeaders(headers: Headers): Promise<void> {
-  if (IS_OIDC) {
+  if (isOidc()) {
     const token = await acquireBearerToken();
     if (token) headers.set("Authorization", `Bearer ${token}`);
     // No fallback header — backend will return 401 if the token is missing,
@@ -96,7 +107,7 @@ export async function call<T>(
 ): Promise<T> {
   const headers = new Headers(init.headers);
   await attachAuthHeaders(headers);
-  const res = await fetch(`${BASE}${path}`, { ...init, headers });
+  const res = await fetch(`${BASE()}${path}`, { ...init, headers });
   if (!res.ok) {
     let body: unknown;
     try {
@@ -117,7 +128,7 @@ export async function callText(
 ): Promise<string> {
   const headers = new Headers(init.headers);
   await attachAuthHeaders(headers);
-  const res = await fetch(`${BASE}${path}`, { ...init, headers });
+  const res = await fetch(`${BASE()}${path}`, { ...init, headers });
   if (!res.ok) {
     let body: unknown;
     try {
@@ -131,8 +142,15 @@ export async function callText(
   return await res.text();
 }
 
-// Re-exported for tests / debugging.
-export const __authConfig = { mode: IS_OIDC ? "oidc" : "stub", apiScope: API_SCOPE };
+// Re-exported for tests / debugging. Reads runtime env at access time.
+export const __authConfig = {
+  get mode(): "oidc" | "stub" {
+    return isOidc() ? "oidc" : "stub";
+  },
+  get apiScope(): string {
+    return apiScope();
+  },
+};
 
 export const api = {
   uploads: {
@@ -141,6 +159,12 @@ export const api = {
         method: "POST",
         body: form,
       });
+    },
+  },
+  meta: {
+    /** Canonical category taxonomy. Public endpoint, safe to cache. */
+    categories(): Promise<string[]> {
+      return call<string[]>("/v1/categories");
     },
   },
   me: {
@@ -199,7 +223,7 @@ export const api = {
       return call<SkillDetail>(`/v1/skills/${skillId}`);
     },
     downloadUrl(skillId: string): string {
-      return `${BASE}/v1/skills/${skillId}/download`;
+      return `${BASE()}/v1/skills/${skillId}/download`;
     },
     reportUsage(skillId: string, body: UsageEventBody): Promise<void> {
       return call<void>(`/v1/skills/${skillId}/usage`, {

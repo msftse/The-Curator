@@ -29,6 +29,8 @@ dependencies = [
     "opentelemetry-instrumentation-redis>=0.48b0",
     # M3 — Curator LLM review (Azure AI Foundry only).
     "azure-ai-inference>=1.0.0b6,<2",
+    "agent-framework-foundry>=1.0.0b9",
+    "azure-ai-agents>=1.2.0b5",
 ]
 
 [project.optional-dependencies]
@@ -37,6 +39,14 @@ dev = [
     "pytest-asyncio>=0.23",
     "ruff>=0.5",
     "pyright>=1.1.370",
+]
+# M4: the API needs the kubernetes client only when RUNTIME_MODE=k8s, used
+# for the on-demand curator Job creation path (/v1/admin/curator/run).
+# Installed in the backend image, omitted from classifier/curator images
+# and from local-dev `uv sync` (no extra). Import in backend code MUST be
+# lazy and gated on settings.runtime_mode.
+k8s = [
+    "kubernetes>=29.0.0",
 ]
 
 [build-system]

@@ -1,9 +1,12 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { api } from "@/lib/api/client";
 import type { UploadResponse } from "@/lib/api/types";
+
+const MAX_USER_TAGS = 8;
+const MAX_TAG_LEN = 40;
 
 export default function UploadPage() {
   const [file, setFile] = useState<File | null>(null);
@@ -13,6 +16,59 @@ export default function UploadPage() {
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
+  const [categories, setCategories] = useState<string[]>([]);
+  const [category, setCategory] = useState<string>("");
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagDraft, setTagDraft] = useState<string>("");
+
+  useEffect(() => {
+    let cancelled = false;
+    api.meta
+      .categories()
+      .then((list) => {
+        if (!cancelled) setCategories(list);
+      })
+      .catch(() => {
+        // Non-fatal: dropdown stays empty, user can still submit without
+        // a category. Backend's user_category=None path is supported.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function addTagFromDraft() {
+    const raw = tagDraft.trim();
+    if (!raw) return;
+    if (raw.length > MAX_TAG_LEN) {
+      setError(`Tag too long (max ${MAX_TAG_LEN} chars): ${raw}`);
+      return;
+    }
+    const lower = raw.toLowerCase();
+    if (tags.some((t) => t.toLowerCase() === lower)) {
+      setTagDraft("");
+      return;
+    }
+    if (tags.length >= MAX_USER_TAGS) {
+      setError(`Maximum ${MAX_USER_TAGS} tags.`);
+      return;
+    }
+    setTags([...tags, raw]);
+    setTagDraft("");
+    setError(null);
+  }
+
+  function onTagKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter" || e.key === "," || e.key === "Tab") {
+      if (tagDraft.trim()) {
+        e.preventDefault();
+        addTagFromDraft();
+      }
+    } else if (e.key === "Backspace" && !tagDraft && tags.length) {
+      setTags(tags.slice(0, -1));
+    }
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!file) return;
@@ -20,11 +76,25 @@ export default function UploadPage() {
     setError(null);
     setResult(null);
     try {
+      // Flush any pending tag draft so the user doesn't lose it on submit.
+      const finalTags = tagDraft.trim()
+        ? [
+            ...tags,
+            ...(tags.some((t) => t.toLowerCase() === tagDraft.trim().toLowerCase())
+              ? []
+              : [tagDraft.trim()]),
+          ]
+        : tags;
       const form = new FormData();
       form.append("file", file);
+      if (category) form.append("category", category);
+      if (finalTags.length) form.append("tags", finalTags.join(","));
       const r = await api.uploads.create(form);
       setResult(r);
       setFile(null);
+      setTags([]);
+      setTagDraft("");
+      setCategory("");
       if (inputRef.current) inputRef.current.value = "";
     } catch (err) {
       setError(String(err));
@@ -130,6 +200,84 @@ export default function UploadPage() {
             </button>
           </div>
         )}
+
+        <div className="grid gap-5 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <label
+              htmlFor="skill-category"
+              className="block font-display text-[13px] font-semibold text-ink"
+            >
+              Category
+              <span className="ml-1 font-normal text-muted">(optional)</span>
+            </label>
+            <select
+              id="skill-category"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="w-full rounded-md border border-line bg-bg px-3 py-2 text-sm text-ink focus:border-ms-blue focus:outline-none focus:ring-1 focus:ring-ms-blue"
+            >
+              <option value="">— Let the classifier decide —</option>
+              {categories.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted">
+              Your choice overrides the auto-classifier.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <label
+              htmlFor="skill-tags"
+              className="block font-display text-[13px] font-semibold text-ink"
+            >
+              Tags
+              <span className="ml-1 font-normal text-muted">
+                (optional, up to {MAX_USER_TAGS})
+              </span>
+            </label>
+            <div
+              className="flex min-h-[42px] flex-wrap items-center gap-1.5 rounded-md border border-line bg-bg px-2 py-1.5 focus-within:border-ms-blue focus-within:ring-1 focus-within:ring-ms-blue"
+              onClick={() => document.getElementById("skill-tags")?.focus()}
+            >
+              {tags.map((t) => (
+                <span
+                  key={t}
+                  className="inline-flex items-center gap-1 rounded-full bg-ms-blue/10 px-2 py-0.5 text-xs font-medium text-ms-blue"
+                >
+                  {t}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${t}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setTags(tags.filter((x) => x !== t));
+                    }}
+                    className="rounded text-ms-blue/70 hover:text-ms-blue"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              <input
+                id="skill-tags"
+                type="text"
+                value={tagDraft}
+                onChange={(e) => setTagDraft(e.target.value)}
+                onKeyDown={onTagKeyDown}
+                onBlur={() => tagDraft.trim() && addTagFromDraft()}
+                placeholder={tags.length ? "" : "kubernetes, helm, …"}
+                className="min-w-[120px] flex-1 border-none bg-transparent px-1 py-0.5 text-sm text-ink focus:outline-none"
+                disabled={tags.length >= MAX_USER_TAGS}
+              />
+            </div>
+            <p className="text-xs text-muted">
+              Press Enter or comma to add. Merged with the classifier's tags.
+            </p>
+          </div>
+        </div>
 
         <div className="flex items-center justify-between gap-3 border-t border-line pt-4">
           <small className="text-xs text-muted">

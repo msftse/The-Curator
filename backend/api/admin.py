@@ -116,10 +116,11 @@ async def archive_skill(
 ) -> SkillListItem:
     """Admin-issued manual archive of an approved skill.
 
-    Soft delete: bytes are copied to `archive/` and status flips to
-    `archived`; the published bundle is intentionally left in place for
-    defense-in-depth (AGENTS.md §5). Restorable via
-    `POST /v1/admin/curator/restore/{skill_id}`.
+    Move semantics (AGENTS.md §5 "archive = move, not copy"):
+    bytes are moved to `archive/` (copy → verify destination exists →
+    delete source from `published/`) and status flips to `archived`.
+    Restorable via `POST /v1/admin/curator/restore/{skill_id}`, which
+    copies `archive/` → `published/` and flips status back to `approved`.
 
     Refuses pinned skills (`SKILL_PINNED`) and non-approved skills
     (`INVALID_STATUS_TRANSITION`).
@@ -152,4 +153,6 @@ def _to_item(doc) -> SkillListItem:
         classification=doc.classification,
         bundle=doc.bundle,
         pinned=doc.pinned,
+        user_category=doc.user_category,
+        user_tags=list(doc.user_tags),
     )

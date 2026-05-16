@@ -25,9 +25,9 @@ export default function CatalogSkillDetailPage({
   const errMsg = error ? String(error) : null;
   const is404 = errMsg?.includes("API 404") ?? false;
 
-  return (
-    <div className="mx-auto flex max-w-[1100px] flex-col gap-6 px-6 py-12">
-      {is404 ? (
+  if (is404) {
+    return (
+      <div className="mx-auto max-w-[1100px] px-6 py-12">
         <div className="ms-card flex flex-col items-start gap-3 p-6">
           <h1 className="font-display text-xl font-bold text-ink">
             Skill not found
@@ -39,32 +39,49 @@ export default function CatalogSkillDetailPage({
             ← Back to catalog
           </Link>
         </div>
-      ) : errMsg ? (
+      </div>
+    );
+  }
+
+  if (errMsg) {
+    return (
+      <div className="mx-auto max-w-[1100px] px-6 py-12">
         <div className="ms-msgbar-danger">
           <span>{errMsg}</span>
         </div>
-      ) : !data ? (
-        <div className="text-sm text-muted">
-          {isLoading ? "Loading skill…" : "No data."}
-        </div>
-      ) : (
-        <>
-          <SkillDetailHeader skill={data} />
-          <SkillDetailMeta skill={data} />
-          <div className="ms-card p-6">
-            <h2 className="mb-3 font-display text-sm font-bold uppercase tracking-[0.15em] text-ink-2">
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="mx-auto max-w-[1100px] px-6 py-12 text-sm text-muted">
+        {isLoading ? "Loading skill…" : "No data."}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto flex max-w-[1200px] flex-col gap-8 px-6 py-12">
+      <SkillDetailHeader skill={data} />
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <article className="ms-card p-7">
+          <div className="mb-5 flex items-center justify-between border-b border-line pb-3">
+            <h2 className="font-display text-[11px] font-bold uppercase tracking-[0.18em] text-ink-2">
               SKILL.md
             </h2>
-            {(data.skill_md_text ?? "").trim() ? (
-              <MarkdownView source={data.skill_md_text ?? ""} />
-            ) : (
-              <p className="text-sm italic text-muted">
-                No SKILL.md body recorded for this skill.
-              </p>
-            )}
+            <code className="font-mono text-[11px] text-muted">
+              {data.skill_id}@{data.version}
+            </code>
           </div>
-        </>
-      )}
+          <MarkdownView source={data.skill_md_text ?? ""} />
+        </article>
+
+        <div className="lg:sticky lg:top-6 lg:self-start">
+          <SkillDetailMeta skill={data} />
+        </div>
+      </div>
     </div>
   );
 }

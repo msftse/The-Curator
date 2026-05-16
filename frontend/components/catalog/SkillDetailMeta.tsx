@@ -9,99 +9,142 @@ function formatBytes(n: number | undefined | null): string {
   return `${(n / (1024 * 1024)).toFixed(2)} MB`;
 }
 
-function Label({ children }: { children: React.ReactNode }) {
-  return (
-    <dt className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">
-      {children}
-    </dt>
-  );
+function formatTimestamp(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  } catch {
+    return iso;
+  }
 }
 
-function Value({ children }: { children: React.ReactNode }) {
-  return <dd className="text-sm text-ink-2">{children}</dd>;
+function Row({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-1 border-b border-line/60 pb-3 last:border-b-0 last:pb-0">
+      <dt className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">
+        {label}
+      </dt>
+      <dd className="text-sm text-ink-2">{children}</dd>
+    </div>
+  );
 }
 
 export function SkillDetailMeta({ skill }: { skill: SkillDetail }) {
   const cls = skill.classification;
   const bundle = skill.bundle;
+  const userCategoryDiverges =
+    skill.user_category != null &&
+    cls?.category != null &&
+    skill.user_category !== cls.category;
 
   return (
-    <div className="ms-card grid grid-cols-1 gap-6 p-5 md:grid-cols-2">
+    <aside className="ms-card flex flex-col gap-5 p-5">
       <section className="flex flex-col gap-3">
-        <h2 className="font-display text-sm font-bold uppercase tracking-[0.15em] text-ink-2">
+        <h2 className="font-display text-[11px] font-bold uppercase tracking-[0.18em] text-ink-2">
           Classifier
         </h2>
         <dl className="flex flex-col gap-3">
-          <div>
-            <Label>Category</Label>
-            <Value>
-              {cls?.category ? (
-                <span className="ms-chip bg-violet/[0.18] text-violet-dark">
-                  {cls.category}
-                </span>
-              ) : (
-                "—"
-              )}
-            </Value>
-          </div>
-          <div>
-            <Label>Tags</Label>
-            <Value>
-              {(cls?.tags ?? []).length === 0 ? (
-                "—"
-              ) : (
-                <span className="flex flex-wrap gap-1.5">
-                  {cls?.tags.map((t) => (
-                    <span key={t} className="ms-chip">
-                      {t}
+          <Row label="Category">
+            {cls?.category ? (
+              <span className="ms-chip bg-violet/[0.18] text-violet-dark">
+                {cls.category}
+              </span>
+            ) : (
+              "—"
+            )}
+          </Row>
+          {(skill.user_category || (skill.user_tags ?? []).length > 0) && (
+            <Row label="Uploader hint">
+              <div className="flex flex-col gap-1.5">
+                {skill.user_category && (
+                  <div>
+                    <span className="ms-chip bg-ms-blue/10 text-ms-blue">
+                      {skill.user_category}
                     </span>
-                  ))}
-                </span>
-              )}
-            </Value>
-          </div>
-          <div>
-            <Label>Quality score</Label>
-            <Value>{cls?.quality_score ?? "—"}</Value>
-          </div>
-          <div>
-            <Label>Summary</Label>
-            <Value>{cls?.summary || skill.description || "—"}</Value>
-          </div>
+                    {userCategoryDiverges && (
+                      <span className="ml-2 text-[11px] text-muted">
+                        overrode classifier
+                      </span>
+                    )}
+                  </div>
+                )}
+                {(skill.user_tags ?? []).length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {skill.user_tags.map((t) => (
+                      <span
+                        key={t}
+                        className="ms-chip bg-ms-blue/10 text-ms-blue"
+                      >
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </Row>
+          )}
+          <Row label="Quality score">
+            {cls?.quality_score != null ? (
+              <span className="font-mono text-sm font-semibold text-ink">
+                {cls.quality_score}
+                <span className="text-xs font-normal text-muted">/100</span>
+              </span>
+            ) : (
+              "—"
+            )}
+          </Row>
+          {cls?.classifier_version && (
+            <Row label="Classifier">
+              <code className="font-mono text-[11px] text-muted">
+                {cls.classifier_version}
+              </code>
+            </Row>
+          )}
         </dl>
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="font-display text-sm font-bold uppercase tracking-[0.15em] text-ink-2">
+        <h2 className="font-display text-[11px] font-bold uppercase tracking-[0.18em] text-ink-2">
           Bundle
         </h2>
         <dl className="flex flex-col gap-3">
-          <div>
-            <Label>Checksum (sha256)</Label>
-            <Value>
-              {bundle?.checksum_sha256 ? (
-                <code className="font-mono text-xs">
-                  {bundle.checksum_sha256.slice(0, 12)}…
-                </code>
-              ) : (
-                "—"
-              )}
-            </Value>
-          </div>
-          <div>
-            <Label>Size</Label>
-            <Value>{formatBytes(bundle?.size_bytes)}</Value>
-          </div>
-          <div>
-            <Label>File count</Label>
-            <Value>{bundle?.file_count ?? "—"}</Value>
-          </div>
-          <div>
-            <Label>Uploaded</Label>
-            <Value>{skill.uploaded_at}</Value>
-          </div>
+          <Row label="Checksum (sha256)">
+            {bundle?.checksum_sha256 ? (
+              <code
+                className="font-mono text-xs"
+                title={bundle.checksum_sha256}
+              >
+                {bundle.checksum_sha256.slice(0, 16)}…
+              </code>
+            ) : (
+              "—"
+            )}
+          </Row>
+          <Row label="Size">{formatBytes(bundle?.size_bytes)}</Row>
+          <Row label="File count">{bundle?.file_count ?? "—"}</Row>
         </dl>
       </section>
-    </div>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="font-display text-[11px] font-bold uppercase tracking-[0.18em] text-ink-2">
+          Lifecycle
+        </h2>
+        <dl className="flex flex-col gap-3">
+          <Row label="Uploaded">{formatTimestamp(skill.uploaded_at)}</Row>
+          {skill.approved_at && (
+            <Row label="Approved">{formatTimestamp(skill.approved_at)}</Row>
+          )}
+        </dl>
+      </section>
+    </aside>
   );
 }

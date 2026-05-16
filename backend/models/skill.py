@@ -11,6 +11,26 @@ SkillStatus = Literal["pending", "classified", "approved", "rejected", "stale", 
 ClassifierStatus = Literal["queued", "running", "done", "failed"]
 
 
+# Canonical category taxonomy (PRD §7.2). The upload UI dropdown, the
+# classifier allow-list, and any validation in between all read from here so
+# there is exactly one source of truth.
+#
+# "uncategorized" is the default when neither the user nor the classifier
+# could pick a fit; it is intentionally NOT offered in the upload dropdown.
+CATEGORY_TAXONOMY: tuple[str, ...] = (
+    "devops",
+    "mlops",
+    "productivity",
+    "social-media",
+    "research",
+    "creative",
+    "github",
+    "other",
+)
+
+CATEGORY_UNCATEGORIZED: str = "uncategorized"
+
+
 def _utc_now() -> datetime:
     return datetime.now(UTC)
 
@@ -61,6 +81,14 @@ class SkillDoc(BaseModel):
 
     pinned: bool = False
     pinned_by: str | None = None
+
+    # Contributor-supplied hints captured at upload. The classifier merges
+    # these with its own output: user_category wins outright, user_tags are
+    # union'd with the classifier's tags (user order first, dedup
+    # case-insensitive, capped at 8). Kept as separate fields so the raw
+    # classifier output stays inspectable on the doc.
+    user_category: str | None = None
+    user_tags: list[str] = Field(default_factory=list)
 
     # SKILL.md body, kept on the doc for the classifier worker + manager preview.
     skill_md_text: str = ""

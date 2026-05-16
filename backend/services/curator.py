@@ -3,11 +3,14 @@
 Ordering for each archive transition (mirrors `backend/services/publish.py`,
 which is the canonical example of AGENTS.md §4 rule #1):
 
-1. **Blob mutation**: copy `published/{id}/{ver}/bundle.tar.gz` to
-   `archive/{id}/{ver}/bundle.tar.gz`. We intentionally LEAVE the source
-   (defense-in-depth — AGENTS.md §5). Catalog queries filter by
-   `status='approved'` so archived skills disappear from the catalog
-   regardless of source bytes still being present.
+1. **Blob mutation**: MOVE `published/{id}/{ver}/bundle.tar.gz` to
+   `archive/{id}/{ver}/bundle.tar.gz`. The destination is verified with
+   `await dest.exists()` BEFORE the source is deleted — this is the
+   AGENTS.md §5 "archive = move, not copy" contract. If verification
+   fails, the source is left intact and the transition is aborted.
+   Catalog queries filter by `status='approved'` so even a half-applied
+   move (rare — would require a crash between Blob copy and Cosmos
+   flip) leaves nothing user-visible until the executor retries.
 2. **Cosmos write** — SOURCE OF TRUTH FLIP — via `replace_with_etag_retry`.
 3. **Audit write** (immutable row).
 4. **Redis invalidation** — LAST, failures non-fatal (rule #2).
@@ -157,16 +160,34 @@ async def _load_candidate_docs(skills: ContainerProxy) -> list[SkillDoc]:
     return out
 
 
-async def copy_published_to_archive(
+async def move_published_to_archive(
     blob: BlobServiceClient,
     settings: Settings,
     *,
     skill_id: str,
     version: str,
 ) -> None:
-    """Copy a published bundle into the archive container (never deletes source).
+    """Move a published bundle into the archive container.
 
-    Public M3 surface — also called by ``curator_review_apply.apply_merge_proposal``.
+    Sequence (AGENTS.md §5 "archive = move, not copy"):
+
+    1. Read source bytes from `published/{id}/{ver}/bundle.tar.gz`. If the
+       source is already gone, log and return — the move intent is
+       satisfied (status flip happens regardless).
+    2. Upload to `archive/{id}/{ver}/bundle.tar.gz`.
+    3. **Verify** the destination with `await dest.exists()`. This is the
+       AGENTS.md §5 precondition — never delete the source without it.
+    4. Delete the source from `published/`. This is the single allowed
+       `delete_blob(...)` callsite in the whole codebase (enforced by
+       `test_never_delete_invariant.py`).
+
+    Any verification failure in step 3 raises — the source remains, the
+    caller's Cosmos status flip is aborted, and a retry on the next
+    curator pass will pick it up. Restore (`curator_review_apply` /
+    `restore` endpoint) is the symmetric copy `archive/` → `published/`.
+
+    Public M3+ surface — also called by
+    ``curator_review_apply.apply_merge_proposal``.
     """
     src = blob.get_container_client(settings.blob_published_container).get_blob_client(
         published_blob_path(skill_id, version)
@@ -176,7 +197,7 @@ async def copy_published_to_archive(
         data = await downloader.readall()
     except Exception as exc:  # noqa: BLE001
         log.warning(
-            "archive_copy_source_missing",
+            "archive_move_source_missing",
             extra={"skill_id": skill_id, "version": version, "err": str(exc)},
         )
         return
@@ -184,10 +205,26 @@ async def copy_published_to_archive(
         published_blob_path(skill_id, version)
     )
     await dest.upload_blob(data, overwrite=True)
+    # §5 precondition: verify the archive copy is durable before deleting
+    # the source. Failure here leaves the source intact.
+    if not await dest.exists():
+        raise RuntimeError(
+            f"archive copy verification failed for {skill_id}@{version}: "
+            f"destination blob not present after upload"
+        )
+    await src.delete_blob()
+    log.info(
+        "archive_move_complete",
+        extra={"skill_id": skill_id, "version": version, "bytes": len(data)},
+    )
 
 
-# Backward-compat alias for the prior private name.
-_copy_to_archive = copy_published_to_archive
+# Backward-compat alias for the prior copy-only name. Kept so external
+# callers (curator_review_apply) and any docstrings referencing the old
+# name keep resolving. New code should use `move_published_to_archive`.
+copy_published_to_archive = move_published_to_archive
+_copy_to_archive = move_published_to_archive
+_move_to_archive = move_published_to_archive
 
 
 async def execute_pass(
@@ -315,7 +352,7 @@ async def _apply_one(
 
     # 1. Blob mutation (archive only).
     if transition.after == "archived":
-        await _copy_to_archive(
+        await _move_to_archive(
             blob,
             settings,
             skill_id=current.skill_id,
@@ -361,8 +398,10 @@ async def _apply_one(
 # ---- Admin manual archive ----------------------------------------------
 #
 # Admins can archive a single approved skill on demand. Same primitives as
-# the deterministic curator pass (copy to archive/, flip Cosmos status,
-# audit, invalidate cache). NEVER deletes — AGENTS.md §5 still holds.
+# the deterministic curator pass (MOVE published→archive, flip Cosmos
+# status, audit, invalidate cache). AGENTS.md §5 archive=move contract:
+# `move_published_to_archive` verifies the destination blob exists before
+# deleting the source from `published/`.
 #
 # Differences from the curator pass:
 #   - No snapshot. This is a single-skill op; rollback uses the existing
@@ -424,10 +463,11 @@ async def archive_skill_now(
             metadata={"status": current.status},
         )
 
-    # 1. Blob mutation — copy published → archive (leaves source for
-    # defense-in-depth; catalog filters by status so archived skills
-    # disappear from public listings regardless).
-    await copy_published_to_archive(
+    # 1. Blob mutation — MOVE published → archive (AGENTS.md §5).
+    # `move_published_to_archive` verifies the destination exists before
+    # deleting the source. If verification fails it raises and the
+    # Cosmos status flip below never happens.
+    await move_published_to_archive(
         blob,
         settings,
         skill_id=current.skill_id,

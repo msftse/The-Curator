@@ -43,6 +43,7 @@ from backend.core.redis import (
 )
 from backend.models.api import SkillListItem
 from backend.models.curator import (
+    CuratorRunDispatched,
     CuratorRunRecord,
     CuratorStatus,
     RollbackResult,
@@ -101,6 +102,8 @@ def _to_item(doc: SkillDoc) -> SkillListItem:
         classification=doc.classification,
         bundle=doc.bundle,
         pinned=doc.pinned,
+        user_category=doc.user_category,
+        user_tags=list(doc.user_tags),
     )
 
 
@@ -130,7 +133,7 @@ async def resume(
     return CuratorStatus(paused=False, lock_held=False, schedule_enabled=True)
 
 
-@router.post("/run", response_model=CuratorRunRecord)
+@router.post("/run", response_model=CuratorRunRecord | CuratorRunDispatched)
 async def run(
     dry_run: bool = Query(False),
     user: User = Depends(_require_admin),
@@ -140,7 +143,27 @@ async def run(
     blob: BlobServiceClient = Depends(get_blob),
     redis: Redis = Depends(get_redis_client),
     system_state: ContainerProxy = Depends(get_system_state_container),
-) -> CuratorRunRecord:
+) -> CuratorRunRecord | CuratorRunDispatched:
+    # M4: in `k8s` runtime mode, dispatch a K8s Job rather than blocking the
+    # API request on the curator pass. Admin role gate (above, via
+    # `_require_admin`) is the first check — non-admins return 403 before we
+    # ever touch the K8s API. See plan §M4 Task 18 + services/k8s_jobs.py.
+    if settings.runtime_mode == "k8s":
+        # Lazy import — `kubernetes` is an optional extra not installed in
+        # local-dev `uv sync`. Module-level import would break `make api`.
+        from backend.services import k8s_jobs
+
+        handle = k8s_jobs.create_curator_ondemand_job(
+            settings=settings,
+            dry_run=dry_run,
+            actor=user.email,
+        )
+        return CuratorRunDispatched(
+            job_name=handle["job_name"],
+            namespace=handle["namespace"],
+            dry_run=dry_run,
+        )
+
     return await curator_svc.execute_pass(
         dry_run=dry_run,
         skills=skills,
@@ -202,14 +225,12 @@ async def restore_skill(
 
     # Copy archive → published
     archive_path = published_blob_path(skill_id, doc.version)
-    src = blob.get_container_client(settings.blob_archive_container).get_blob_client(
-        archive_path
-    )
+    src = blob.get_container_client(settings.blob_archive_container).get_blob_client(archive_path)
     downloader = await src.download_blob()
     data = await downloader.readall()
-    dest = blob.get_container_client(
-        settings.blob_published_container
-    ).get_blob_client(archive_path)
+    dest = blob.get_container_client(settings.blob_published_container).get_blob_client(
+        archive_path
+    )
     await dest.upload_blob(data, overwrite=True)
 
     def _flip(body: dict[str, Any]) -> dict[str, Any]:
@@ -341,9 +362,7 @@ async def status_endpoint(
     redis: Redis = Depends(get_redis_client),
     system_state: ContainerProxy = Depends(get_system_state_container),
 ) -> CuratorStatus:
-    paused = await curator_state_svc.is_paused(
-        system_state=system_state, redis=redis
-    )
+    paused = await curator_state_svc.is_paused(system_state=system_state, redis=redis)
 
     lock_held = False
     try:
@@ -460,17 +479,13 @@ async def get_run_report(
     from backend.core.errors import CuratorRunReportNotFound
 
     container = blob.get_container_client(settings.curator_reports_container)
-    blob_path = (
-        f"{settings.curator_runs_container_prefix}/{run_id}/REPORT.md"
-    )
+    blob_path = f"{settings.curator_runs_container_prefix}/{run_id}/REPORT.md"
     try:
         client = container.get_blob_client(blob_path)
         downloader = await client.download_blob()
         raw = await downloader.readall()
     except Exception as exc:  # noqa: BLE001
-        raise CuratorRunReportNotFound(
-            f"report for run {run_id!r} not found"
-        ) from exc
+        raise CuratorRunReportNotFound(f"report for run {run_id!r} not found") from exc
     return Response(content=raw, media_type="text/markdown; charset=utf-8")
 
 
@@ -535,10 +550,7 @@ async def list_reviews(
         where.append("c.run_id=@run_id")
         params.append({"name": "@run_id", "value": run_id})
     where_sql = (" WHERE " + " AND ".join(where)) if where else ""
-    query = (
-        f"SELECT * FROM c{where_sql} ORDER BY c.created_at DESC "
-        f"OFFSET 0 LIMIT @limit"
-    )
+    query = f"SELECT * FROM c{where_sql} ORDER BY c.created_at DESC OFFSET 0 LIMIT @limit"
     params.append({"name": "@limit", "value": int(limit)})
 
     proposals: list[ReviewProposal] = []
@@ -610,9 +622,7 @@ async def approve_review(
             blob=blob,
             redis=redis,
         )
-    raise ReviewProposalNotPending(
-        f"proposal kind={proposal.kind!r} cannot be applied"
-    )
+    raise ReviewProposalNotPending(f"proposal kind={proposal.kind!r} cannot be applied")
 
 
 @router.post("/reviews/{proposal_id}/reject", response_model=ReviewProposal)

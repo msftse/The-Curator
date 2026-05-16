@@ -26,13 +26,13 @@ import {
 } from "react";
 
 import {
-  IS_OIDC,
+  isOidc,
   buildLoginRequest,
   getMsal,
 } from "./msal";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  if (!IS_OIDC) {
+  if (!isOidc()) {
     return <>{children}</>;
   }
   return <OidcAuthProvider>{children}</OidcAuthProvider>;
@@ -137,10 +137,10 @@ export function useAuthAccount(): {
   name: string | null;
   oid: string | null;
 } {
-  // `IS_OIDC` is a build-time constant. In stub builds the entire useMsal
-  // branch below is unreachable, so the rules-of-hooks linter still sees a
-  // stable call order at runtime.
-  if (!IS_OIDC) {
+  // `isOidc()` reads runtime env. In stub deployments the useMsal branch
+  // below is unreachable, so the rules-of-hooks linter still sees a
+  // stable call order at runtime within a single page lifetime.
+  if (!isOidc()) {
     return { email: null, name: null, oid: null };
   }
   return useAuthAccountOidc();
@@ -164,7 +164,7 @@ function useAuthAccountOidc(): {
 
 /** Trigger sign-out via redirect. No-op in stub mode. */
 export function signOut(): void {
-  if (!IS_OIDC) return;
+  if (!isOidc()) return;
   const instance = getMsal();
   void instance.logoutRedirect();
 }

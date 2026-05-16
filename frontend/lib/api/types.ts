@@ -39,6 +39,12 @@ export interface SkillListItem {
   classification: Classification | null;
   bundle: Bundle | null;
   pinned: boolean;
+  /** Contributor-supplied category from the upload form. Overrides
+   *  `classification.category` when both are set. */
+  user_category: string | null;
+  /** Contributor-supplied tags from the upload form. Merged with
+   *  `classification.tags` (user order first, dedup case-insensitive, cap 8). */
+  user_tags: string[];
 }
 
 export interface SkillDetail extends SkillListItem {

@@ -119,7 +119,7 @@ async def test_llm_classifier_frontmatter_wins_over_llm():
         [
             _llm_result(
                 {
-                    "category": "frontend",
+                    "category": "creative",
                     "tags": ["react"],
                     "quality_score": 75,
                     "summary": "an llm summary",
@@ -128,7 +128,7 @@ async def test_llm_classifier_frontmatter_wins_over_llm():
         ]
     )
     classifier = LLMClassifier(fake)
-    # SKILL_MD has frontmatter category=devops; LLM says frontend; frontmatter wins.
+    # SKILL_MD has frontmatter category=devops; LLM says creative; frontmatter wins.
     c = await classifier.classify(SKILL_MD)
     assert c.category == "devops"
     assert c.tags == ["k8s", "ops", "deploy"]
@@ -193,7 +193,7 @@ async def test_llm_classifier_falls_back_on_unparseable_output():
 async def test_llm_classifier_strips_code_fences():
     payload = json.dumps(
         {
-            "category": "data",
+            "category": "research",
             "tags": ["sql"],
             "quality_score": 80,
             "summary": "Run SQL.",
@@ -203,7 +203,7 @@ async def test_llm_classifier_strips_code_fences():
         [LLMResult(text=f"```json\n{payload}\n```", input_tokens=1, output_tokens=1, model_id="m")]
     )
     c = await LLMClassifier(fake).classify("# Run SQL\nbody\n")
-    assert c.category == "data"
+    assert c.category == "research"
     assert c.tags == ["sql"]
 
 
@@ -212,7 +212,7 @@ async def test_llm_classifier_normalizes_tags():
         [
             _llm_result(
                 {
-                    "category": "frontend",
+                    "category": "creative",
                     "tags": ["React Hooks", "react hooks", "REACT-HOOKS", "  state  "],
                     "quality_score": 70,
                     "summary": "x",

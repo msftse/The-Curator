@@ -11,13 +11,13 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
-import { IS_OIDC, getMsal } from "@/lib/auth/msal";
+import { isOidc, getMsal } from "@/lib/auth/msal";
 
 export default function AuthCallbackPage() {
   const router = useRouter();
 
   useEffect(() => {
-    if (!IS_OIDC) {
+    if (!isOidc()) {
       router.replace("/");
       return;
     }

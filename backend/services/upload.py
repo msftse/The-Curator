@@ -19,9 +19,10 @@ from azure.cosmos.aio import ContainerProxy
 from redis.asyncio import Redis
 
 from backend.core.config import Settings
+from backend.core.errors import InvalidBundle
 from backend.core.logging import bind, get_logger
 from backend.core.redis import key_queue_classifier
-from backend.models.skill import SkillDoc
+from backend.models.skill import CATEGORY_TAXONOMY, SkillDoc
 from backend.services import audit as audit_svc
 from backend.services.skill_bundle import (
     build_tar,
@@ -35,12 +36,53 @@ from backend.services.skill_bundle import (
 log = get_logger(__name__)
 
 
+_MAX_USER_TAGS = 8
+_MAX_TAG_LEN = 40
+
+
+def _normalize_user_tags(raw: list[str] | None) -> list[str]:
+    """Trim, dedup (case-insensitive), cap. Preserves first-seen casing."""
+    if not raw:
+        return []
+    seen: set[str] = set()
+    out: list[str] = []
+    for tag in raw:
+        if not isinstance(tag, str):
+            continue
+        t = tag.strip()
+        if not t:
+            continue
+        if len(t) > _MAX_TAG_LEN:
+            raise InvalidBundle(f"tag exceeds {_MAX_TAG_LEN} characters: {t[:_MAX_TAG_LEN]}…")
+        key = t.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(t)
+        if len(out) >= _MAX_USER_TAGS:
+            break
+    return out
+
+
+def _normalize_user_category(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    v = raw.strip().lower()
+    if not v:
+        return None
+    if v not in CATEGORY_TAXONOMY:
+        raise InvalidBundle(f"category must be one of {', '.join(CATEGORY_TAXONOMY)}; got {raw!r}")
+    return v
+
+
 async def handle_upload(
     *,
     filename: str,
     data: bytes,
     uploader: str,
     uploader_oid: str | None = None,
+    user_category: str | None = None,
+    user_tags: list[str] | None = None,
     settings: Settings,
     skills: ContainerProxy,
     audit: ContainerProxy,
@@ -49,10 +91,11 @@ async def handle_upload(
     """Validate + persist a pending skill, then enqueue classification."""
     enforce_size(data, settings.max_bundle_bytes)
 
+    normalized_category = _normalize_user_category(user_category)
+    normalized_tags = _normalize_user_tags(user_tags)
+
     files = _materialize_files(filename, data)
     if "SKILL.md" not in files:
-        from backend.core.errors import InvalidBundle
-
         raise InvalidBundle("bundle must contain a SKILL.md at the root")
 
     skill_md_text = files["SKILL.md"].decode("utf-8", errors="replace")
@@ -75,6 +118,8 @@ async def handle_upload(
         status="pending",
         classifier_status="queued",
         uploader=uploader,
+        user_category=normalized_category,
+        user_tags=normalized_tags,
         skill_md_text=skill_md_text,
         pending_bundle_b64=base64.b64encode(tar_bytes).decode("ascii"),
     )
@@ -92,7 +137,12 @@ async def handle_upload(
         actor=uploader,
         actor_oid=uploader_oid,
         after={"status": "pending", "version": version, "doc_id": doc.id},
-        metadata={"filename": filename, "size_bytes": len(data)},
+        metadata={
+            "filename": filename,
+            "size_bytes": len(data),
+            "user_category": normalized_category,
+            "user_tags": normalized_tags,
+        },
     )
 
     # 3. Enqueue classifier job. Failure here is logged + swallowed; the

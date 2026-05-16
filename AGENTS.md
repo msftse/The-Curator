@@ -84,7 +84,7 @@ Every PR touching the data layer must obey these. Reviewers should reject violat
 
 ## 5. Never-Delete Invariant (Curator)
 
-The curator can archive, suggest, and snapshot — it **never deletes**.
+The curator can archive, suggest, and snapshot — it **never deletes** skill data without first writing an immutable copy elsewhere.
 
 Hard rules:
 - **No auto-delete, ever.** Worst possible outcome is archival, which is fully recoverable.
@@ -99,9 +99,15 @@ Curator transitions are deterministic:
 
 Admin commands: `pause`, `resume`, `run --dry-run`, `run`, `rollback`, `pin`, `unpin`, `restore`.
 
-If you are tempted to add a delete code path anywhere near skills or bundles: stop, re-read this section, and write archival logic instead.
+### Archive = move, not copy
 
-This invariant is enforced statically by `backend/tests/unit/test_never_delete_invariant.py`, which AST-scans the curator/rollback/snapshot/usage/janitor service + worker files for `delete_item(...)` and `delete_blob(...)` calls. Adding either is a hard test failure.
+"Archive" means **move**: the bundle is materialized in `archive/{skill_id}/{version}/bundle.tar.gz` and the source in `published/{skill_id}/{version}/bundle.tar.gz` is deleted **only after** the destination is verified to exist. Restore copies `archive/` → `published/` and flips the status back.
+
+The lone allowed `delete_blob(...)` callsite is `move_published_to_archive` in `backend/services/curator.py`. Every other guarded file is still forbidden from calling `delete_blob` or `delete_item`. The verification precondition (`await dest.exists()`) is part of the contract — never delete the source without it.
+
+If you are tempted to add **any other** delete code path near skills or bundles: stop, re-read this section, and write archival logic instead.
+
+This invariant is enforced statically by `backend/tests/unit/test_never_delete_invariant.py`, which AST-scans the curator/rollback/snapshot/usage/janitor service + worker files for `delete_item(...)` and `delete_blob(...)` calls. The scan is scope-aware: `delete_blob` inside the body of `move_published_to_archive` is allowed; everywhere else is a hard test failure. `delete_item` is still forbidden everywhere.
 
 ---
 

@@ -9,13 +9,15 @@ It must:
   - Refuse non-approved skills (409 `INVALID_STATUS_TRANSITION`).
   - On the happy path:
       * Flip Cosmos `status` → `archived`.
-      * Copy bundle from `published/` to `archive/` (leave the source —
-        AGENTS.md §5 defense-in-depth).
+      * MOVE bundle from `published/` to `archive/` (copy then delete
+        source — AGENTS.md §5 archive=move, verified by `dest.exists()`
+        before the source delete).
       * Write an audit row with `action='archive'`, the supplied reason,
         and `source='admin_manual'` metadata.
       * Drop the skill out of the public catalog (`status` filter).
       * Be reversible via the existing
-        `POST /v1/admin/curator/restore/{skill_id}` endpoint.
+        `POST /v1/admin/curator/restore/{skill_id}` endpoint, which
+        copies `archive/`→`published/` and flips status back.
 
 Mirrors the seeding pattern in `test_curator_pin_unpin.py`. Requires the
 docker-compose emulator stack.
@@ -166,7 +168,7 @@ async def test_admin_archive_happy_path_with_restore(app_client, as_admin):
         doc = await skills_container.read_item(item=f"{skill_id}::1.0.0", partition_key=skill_id)
         assert doc["status"] == "archived"
 
-        # 3. Archive blob exists; published source intentionally left.
+        # 3. Archive blob exists; published source removed (move, not copy).
         archive_path = published_blob_path(skill_id, "1.0.0")
         archive_blob = blob_service.get_container_client(
             settings.blob_archive_container
@@ -175,7 +177,7 @@ async def test_admin_archive_happy_path_with_restore(app_client, as_admin):
         published_blob = blob_service.get_container_client(
             settings.blob_published_container
         ).get_blob_client(archive_path)
-        assert await published_blob.exists()  # defense-in-depth: source kept.
+        assert not await published_blob.exists()  # AGENTS.md §5: archive = move.
 
         # 4. Audit row recorded with reason + admin_manual metadata.
         archive_rows: list[dict] = []

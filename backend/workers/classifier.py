@@ -27,11 +27,47 @@ from backend.core.cosmos import (
 from backend.core.logging import bind, configure_logging, get_logger
 from backend.core.redis import key_cache_item, key_queue_classifier
 from backend.core.telemetry import configure_telemetry
-from backend.models.skill import SkillDoc
+from backend.models.skill import Classification, SkillDoc
 from backend.services import audit as audit_svc
 from backend.services.classifier_stub import make_classifier
 
 log = get_logger(__name__)
+
+
+def _merge_user_hints(
+    result: Classification,
+    *,
+    user_category: str | None,
+    user_tags: list[str],
+) -> Classification:
+    """Apply contributor-supplied hints to a fresh classifier result.
+
+    - `user_category` (when non-empty) overrides `result.category` unconditionally.
+      The classifier's pick is preserved on the doc audit row before this merge.
+    - `user_tags` are prepended to `result.tags`, then deduped case-insensitively
+      (preserving first-seen casing), then capped at 8.
+    """
+    merged_category = result.category
+    if user_category and user_category.strip():
+        merged_category = user_category.strip()
+
+    seen: set[str] = set()
+    merged_tags: list[str] = []
+    for tag in list(user_tags) + list(result.tags):
+        if not isinstance(tag, str):
+            continue
+        normalized = tag.strip()
+        if not normalized:
+            continue
+        key = normalized.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        merged_tags.append(normalized)
+        if len(merged_tags) >= 8:
+            break
+
+    return result.model_copy(update={"category": merged_category, "tags": merged_tags})
 
 
 async def process_one(
@@ -61,6 +97,11 @@ async def process_one(
     try:
         result = await classifier.classify(doc.skill_md_text)
         result.classified_at = datetime.now(UTC)
+        # Merge contributor-supplied hints with classifier output.
+        # Policy: user_category wins outright; tags = union(user_tags,
+        # classifier_tags) with user order first, case-insensitive dedup,
+        # capped at 8. See AGENTS.md / docs/PRD.md §7.2.
+        result = _merge_user_hints(result, user_category=doc.user_category, user_tags=doc.user_tags)
         doc.classification = result
         doc.classifier_status = "done"
         if doc.status == "pending":

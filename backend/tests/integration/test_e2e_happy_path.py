@@ -38,7 +38,7 @@ pytestmark = pytest.mark.integration
 SKILL_MD = """---
 name: e2e-test-skill
 description: end-to-end happy path
-category: testing
+category: devops
 tags: [e2e, demo]
 ---
 # e2e-test-skill
@@ -130,7 +130,7 @@ async def test_e2e_happy_path(app_client):
     # Doc should now be classified.
     classified = await skills.read_item(item=doc_id, partition_key=skill_id)
     assert classified["status"] == "classified"
-    assert classified["classification"]["category"] == "testing"
+    assert classified["classification"]["category"] == "devops"
 
     # --- 3. Manager approves ---
     resp = await client.post(

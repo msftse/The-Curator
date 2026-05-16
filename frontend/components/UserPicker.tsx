@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { IS_OIDC } from "@/lib/auth/msal";
+import { isOidc } from "@/lib/auth/msal";
 import { signOut, useAuthAccount } from "@/lib/auth/AuthProvider";
 
 const PRESET_USERS = ["alice@org", "bob@org", "manager@org", "admin@org"];
@@ -30,9 +30,10 @@ function initialsFor(email: string): string {
 }
 
 export function UserPicker() {
-  // Build-time branch — the two render paths share no state, so we route
-  // before any hooks fire to keep rules-of-hooks happy.
-  if (IS_OIDC) {
+  // Runtime branch — the two render paths share no state, so we route
+  // before any hooks fire to keep rules-of-hooks happy. `isOidc()` is
+  // stable within a page lifetime (runtime env doesn't change mid-session).
+  if (isOidc()) {
     return <OidcAccountChip />;
   }
   return <StubPersonaPicker />;

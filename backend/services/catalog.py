@@ -32,6 +32,8 @@ def _to_list_item(doc: SkillDoc) -> SkillListItem:
         classification=doc.classification,
         bundle=doc.bundle,
         pinned=doc.pinned,
+        user_category=doc.user_category,
+        user_tags=list(doc.user_tags),
     )
 
 
@@ -109,9 +111,7 @@ async def list_my_submissions(
     query = "SELECT * FROM c WHERE c.uploader=@u ORDER BY c.uploaded_at DESC"
     params = [{"name": "@u", "value": uploader}]
     items: list[SkillListItem] = []
-    async for raw in skills.query_items(
-        query=query, parameters=params
-    ):
+    async for raw in skills.query_items(query=query, parameters=params):
         items.append(_to_list_item(SkillDoc.model_validate(raw)))
     return items
 

@@ -114,3 +114,19 @@ class SnapshotListItem(BaseModel):
     captured_at: datetime
     skills_count: int
     size_bytes: int
+
+
+class CuratorRunDispatched(BaseModel):
+    """Response from POST /v1/admin/curator/run when runtime_mode=k8s.
+
+    The API dispatched a K8s Job from the curator-ondemand CronJob template
+    instead of running the pass in-process. The Job runs asynchronously;
+    callers poll `kubectl get job <job_name>` (or watch the curator runs
+    list endpoint) for completion.
+    """
+
+    mode: Literal["k8s"] = "k8s"
+    job_name: str
+    namespace: str
+    dry_run: bool
+    started_at: datetime = Field(default_factory=_utc_now)

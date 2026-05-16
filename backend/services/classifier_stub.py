@@ -20,14 +20,31 @@ from __future__ import annotations
 import json
 from typing import Any, Protocol
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from backend.core.config import Settings
 from backend.core.errors import LLMProviderError
 from backend.core.logging import get_logger
-from backend.models.skill import Classification
+from backend.models.skill import CATEGORY_TAXONOMY, CATEGORY_UNCATEGORIZED, Classification
 from backend.services.llm.provider import LLMProvider
 from backend.services.skill_bundle import parse_skill_md
 
 log = get_logger(__name__)
+
+
+class _LLMClassification(BaseModel):
+    """Strict shape returned by the LLM. Distinct from ``Classification``
+    (the doc-level record) because the model never produces
+    ``duplicate_candidates`` or ``classifier_version`` — those are set by
+    the worker. Used as MAF ``response_format`` for server-side validation.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    category: str = Field(description="One of the allowed categories.")
+    tags: list[str] = Field(default_factory=list, max_length=8)
+    quality_score: int = Field(ge=0, le=100, default=70)
+    summary: str = Field(default="", max_length=200)
 
 
 class ClassifierProvider(Protocol):
@@ -90,23 +107,10 @@ class StubClassifier:
 
 # Curated allow-list. The LLM is instructed to pick one of these; anything else
 # is coerced to "uncategorized" by the parser. Keeps the category facet usable
-# in the catalog filter UI without an admin curation step.
-ALLOWED_CATEGORIES: tuple[str, ...] = (
-    "devops",
-    "frontend",
-    "backend",
-    "data",
-    "ml",
-    "security",
-    "testing",
-    "documentation",
-    "cloud",
-    "database",
-    "networking",
-    "productivity",
-    "research",
-    "uncategorized",
-)
+# in the catalog filter UI without an admin curation step. Sourced from the
+# canonical taxonomy in backend.models.skill so the upload UI, classifier
+# prompt, and validation never drift.
+ALLOWED_CATEGORIES: tuple[str, ...] = CATEGORY_TAXONOMY + (CATEGORY_UNCATEGORIZED,)
 
 
 _LLM_SYSTEM = (
@@ -179,13 +183,22 @@ class LLMClassifier:
 
         user_prompt = _LLM_USER_TEMPLATE.format(body=(body or skill_md_text or "").strip())
 
+        log.info(
+            "llm_classifier.invoke skill_chars=%d body_chars=%d "
+            "frontmatter_category=%r frontmatter_tags=%r",
+            len(skill_md_text or ""),
+            len(body or ""),
+            frontmatter_category,
+            frontmatter_tags,
+        )
+
         try:
             result = await self._llm.complete(
                 system=_LLM_SYSTEM,
                 user=user_prompt,
                 max_input_tokens=self._MAX_INPUT_TOKENS,
                 max_output_tokens=self._MAX_OUTPUT_TOKENS,
-                response_format="json_object",
+                response_format=_LLMClassification,
                 temperature=0.0,
             )
         except LLMProviderError as exc:
@@ -195,13 +208,21 @@ class LLMClassifier:
             )
             return StubClassifier._classify_sync(skill_md_text)
 
-        parsed = _parse_llm_json(result.text)
-        if parsed is None:
-            log.warning(
-                "llm_classifier_unparseable_falling_back_to_stub",
-                extra={"raw_text": result.text[:500]},
-            )
-            return StubClassifier._classify_sync(skill_md_text)
+        # With Pydantic structured output, MAF returns text that should parse
+        # cleanly. Keep the lenient JSON fallback for older providers (Fake,
+        # any future Foundry deployment that ignores response_format) so a
+        # malformed response still degrades to the stub instead of crashing.
+        try:
+            parsed_obj = _LLMClassification.model_validate_json(result.text)
+            parsed = parsed_obj.model_dump()
+        except Exception:
+            parsed = _parse_llm_json(result.text)
+            if parsed is None:
+                log.warning(
+                    "llm_classifier_unparseable_falling_back_to_stub",
+                    extra={"raw_text": result.text[:500]},
+                )
+                return StubClassifier._classify_sync(skill_md_text)
 
         # Frontmatter wins over LLM when present — contributor intent is law.
         category = frontmatter_category or _coerce_category(parsed.get("category"))

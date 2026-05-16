@@ -69,6 +69,8 @@ async def get_skill(
         classification=doc.classification,
         bundle=doc.bundle,
         pinned=doc.pinned,
+        user_category=doc.user_category,
+        user_tags=list(doc.user_tags),
         skill_md_text=doc.skill_md_text,
     )
 

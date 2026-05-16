@@ -35,6 +35,11 @@ class SkillListItem(BaseModel):
     classification: Classification | None = None
     bundle: Bundle | None = None
     pinned: bool = False
+    # Contributor-supplied hints from the upload form. Surfaced so the
+    # detail page can show "uploader said X, classifier said Y" when they
+    # diverge.
+    user_category: str | None = None
+    user_tags: list[str] = Field(default_factory=list)
 
 
 class SkillDetail(SkillListItem):

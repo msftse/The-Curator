@@ -59,7 +59,7 @@ from backend.models.skill import Bundle, SkillDoc
 from backend.services import audit as audit_svc
 from backend.services import snapshot as snapshot_svc
 from backend.services.cosmos_helpers import replace_with_etag_retry
-from backend.services.curator import copy_published_to_archive
+from backend.services.curator import move_published_to_archive
 from backend.services.skill_bundle import build_tar, extract_tar
 
 log = get_logger(__name__)
@@ -92,12 +92,8 @@ async def _load_proposal(
     return ReviewProposal.model_validate(raw)
 
 
-async def _save_proposal(
-    review_proposals: ContainerProxy, proposal: ReviewProposal
-) -> None:
-    await review_proposals.replace_item(
-        item=proposal.id, body=proposal.model_dump(mode="json")
-    )
+async def _save_proposal(review_proposals: ContainerProxy, proposal: ReviewProposal) -> None:
+    await review_proposals.replace_item(item=proposal.id, body=proposal.model_dump(mode="json"))
 
 
 async def _load_skill_with_etag(
@@ -106,9 +102,7 @@ async def _load_skill_with_etag(
     """Return (doc, doc_id, _etag) for the latest doc of ``skill_id`` or None."""
     query = "SELECT * FROM c WHERE c.skill_id=@id ORDER BY c.uploaded_at DESC"
     params = [{"name": "@id", "value": skill_id}]
-    async for raw in skills.query_items(
-        query=query, parameters=params, partition_key=skill_id
-    ):
+    async for raw in skills.query_items(query=query, parameters=params, partition_key=skill_id):
         etag = raw.get("_etag", "")
         doc_id = raw["id"]
         doc = SkillDoc.model_validate(raw)
@@ -135,9 +129,7 @@ async def reject_proposal(
 ) -> ReviewProposal:
     """Mark a pending proposal rejected. No Blob or skill mutation."""
     bind(actor=actor)
-    proposal = await _load_proposal(
-        review_proposals, proposal_id=proposal_id, run_id=run_id
-    )
+    proposal = await _load_proposal(review_proposals, proposal_id=proposal_id, run_id=run_id)
     if proposal.status != "pending":
         raise ReviewProposalNotPending(
             f"proposal {proposal_id!r} is not pending (status={proposal.status})"
@@ -178,17 +170,13 @@ async def apply_patch_proposal(
 ) -> ReviewProposal:
     """Apply a ``kind="patch"`` proposal: bundle rebuild + version bump."""
     bind(actor=actor)
-    proposal = await _load_proposal(
-        review_proposals, proposal_id=proposal_id, run_id=run_id
-    )
+    proposal = await _load_proposal(review_proposals, proposal_id=proposal_id, run_id=run_id)
     if proposal.status != "pending":
         raise ReviewProposalNotPending(
             f"proposal {proposal_id!r} is not pending (status={proposal.status})"
         )
     if proposal.kind != "patch" or proposal.patch is None:
-        raise ReviewProposalNotPending(
-            f"proposal {proposal_id!r} is not a patch proposal"
-        )
+        raise ReviewProposalNotPending(f"proposal {proposal_id!r} is not a patch proposal")
 
     async with redis_lock(
         redis,
@@ -205,9 +193,7 @@ async def apply_patch_proposal(
             proposal.status = "stale"
             proposal.apply_error = "etag mismatch"
             await _save_proposal(review_proposals, proposal)
-            raise ReviewProposalStale(
-                f"skill {target_id!r} _etag advanced since review"
-            )
+            raise ReviewProposalStale(f"skill {target_id!r} _etag advanced since review")
 
         # 1. Snapshot for rollback safety.
         manifest = await snapshot_svc.snapshot_published(
@@ -247,9 +233,7 @@ async def apply_patch_proposal(
             d.skill_md_text = proposal.patch.patch_text if proposal.patch else d.skill_md_text
             return d.model_dump(mode="json")
 
-        await replace_with_etag_retry(
-            skills, item_id=doc_id, partition_key=target_id, mutate=_flip
-        )
+        await replace_with_etag_retry(skills, item_id=doc_id, partition_key=target_id, mutate=_flip)
 
         # 5. Audit.
         with contextlib.suppress(Exception):
@@ -298,17 +282,13 @@ async def apply_merge_proposal(
     (Blob copy + Cosmos status flip; sources NEVER deleted).
     """
     bind(actor=actor)
-    proposal = await _load_proposal(
-        review_proposals, proposal_id=proposal_id, run_id=run_id
-    )
+    proposal = await _load_proposal(review_proposals, proposal_id=proposal_id, run_id=run_id)
     if proposal.status != "pending":
         raise ReviewProposalNotPending(
             f"proposal {proposal_id!r} is not pending (status={proposal.status})"
         )
     if proposal.kind != "merge" or proposal.merge is None:
-        raise ReviewProposalNotPending(
-            f"proposal {proposal_id!r} is not a merge proposal"
-        )
+        raise ReviewProposalNotPending(f"proposal {proposal_id!r} is not a merge proposal")
 
     async with redis_lock(
         redis,
@@ -327,9 +307,7 @@ async def apply_merge_proposal(
                 proposal.status = "stale"
                 proposal.apply_error = f"etag mismatch on {sid}"
                 await _save_proposal(review_proposals, proposal)
-                raise ReviewProposalStale(
-                    f"skill {sid!r} _etag advanced since review"
-                )
+                raise ReviewProposalStale(f"skill {sid!r} _etag advanced since review")
             loaded[sid] = (doc, doc_id, etag)
 
         manifest = await snapshot_svc.snapshot_published(
@@ -345,8 +323,11 @@ async def apply_merge_proposal(
         tar_bytes, checksum = build_tar({"SKILL.md": umbrella_md.encode("utf-8")})
 
         blob_url = await put_published(
-            blob, settings,
-            skill_id=umbrella_id, version=umbrella_version, data=tar_bytes,
+            blob,
+            settings,
+            skill_id=umbrella_id,
+            version=umbrella_version,
+            data=tar_bytes,
         )
 
         # 2. Create umbrella skill doc (status=pending; classifier picks it up).
@@ -375,11 +356,12 @@ async def apply_merge_proposal(
         with contextlib.suppress(RedisError, Exception):
             await redis.rpush(key_queue_classifier(), umbrella_id)
 
-        # 4. Archive merged-in skills (Blob copy + Cosmos status flip).
+        # 4. Archive merged-in skills (Blob MOVE + Cosmos status flip).
+        # Each move verifies the archive copy exists before deleting the
+        # published source (AGENTS.md §5). On any verification failure,
+        # the move raises and this whole apply step bubbles up.
         for sid, (doc, doc_id, _etag) in loaded.items():
-            await copy_published_to_archive(
-                blob, settings, skill_id=sid, version=doc.version
-            )
+            await move_published_to_archive(blob, settings, skill_id=sid, version=doc.version)
 
             def _flip(body: dict[str, Any]) -> dict[str, Any]:
                 d = SkillDoc.model_validate(body)
