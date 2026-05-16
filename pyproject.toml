@@ -1,0 +1,71 @@
+[project]
+name = "agentic-skill-hub-backend"
+version = "0.1.0"
+description = "Agentic Skill Hub — FastAPI backend + classifier worker (M0 POC)"
+requires-python = ">=3.12"
+readme = "README.md"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "azure-cosmos>=4.7",
+    "azure-storage-blob>=12.20",
+    "redis[hiredis]>=5.0",
+    "python-multipart>=0.0.9",
+    "pyyaml>=6.0",
+    "httpx>=0.27",
+    "python-slugify>=8.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+    "pyright>=1.1.370",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["backend*"]
+exclude = ["frontend*", "tests*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["frontend", ".venv", "node_modules"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B", "ASYNC", "C4", "SIM"]
+# B008: FastAPI uses Depends(...)/File(...) in defaults by design.
+# SIM105: try/except/pass is sometimes clearer than contextlib.suppress.
+# SIM117: combining async-with statements hides intent in fixtures.
+ignore = ["E501", "B008", "SIM105", "SIM117"]
+
+[tool.ruff.lint.per-file-ignores]
+"backend/tests/**" = ["B017", "B018"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["backend/tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+markers = [
+    "integration: requires docker compose stack (cosmos + azurite + redis)",
+]
+
+[tool.pyright]
+include = ["backend"]
+exclude = ["**/__pycache__", ".venv", "node_modules", "frontend"]
+pythonVersion = "3.12"
+typeCheckingMode = "basic"

@@ -1,0 +1,31 @@
+# Pre-commit hooks for Agentic Skill Hub.
+# Install with: pre-commit install
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      - id: detect-private-key
+      - id: check-merge-conflict
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.5.7
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+      - id: ruff-format
+
+  # Frontend (run only when frontend files change)
+  - repo: local
+    hooks:
+      - id: frontend-typecheck
+        name: frontend typecheck (tsc --noEmit)
+        entry: bash -c 'cd frontend && pnpm typecheck'
+        language: system
+        files: ^frontend/.*\.(ts|tsx)$
+        pass_filenames: false
+        stages: [pre-push]  # skip on commit; only run on push

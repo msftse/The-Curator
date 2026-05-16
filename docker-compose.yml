@@ -1,0 +1,73 @@
+# Local emulator stack for Agentic Skill Hub.
+# Brings up Cosmos DB emulator (NoSQL), Azurite (Blob), and Redis 7 with AOF.
+# Zero Azure spend — see AGENTS.md §6.
+
+services:
+  cosmos:
+    # vnext linux emulator. The classic emulator image is amd64 only; this preview
+    # works on both arm64 and amd64.
+    image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:vnext-preview
+    container_name: skillhub-cosmos
+    tty: true
+    restart: unless-stopped
+    mem_limit: 3g
+    environment:
+      - PROTOCOL=https
+      - ENABLE_EXPLORER=true
+    ports:
+      - "8081:8081"   # Data plane
+      - "1234:1234"   # Explorer
+      - "10250-10255:10250-10255"
+    volumes:
+      - cosmos-data:/tmp/cosmos
+    healthcheck:
+      test: ["CMD-SHELL", "curl -k -s https://localhost:8081/_explorer/emulator.pem >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    container_name: skillhub-azurite
+    restart: unless-stopped
+    command: >
+      azurite
+      --blobHost 0.0.0.0
+      --queueHost 0.0.0.0
+      --tableHost 0.0.0.0
+      --location /data
+      --skipApiVersionCheck
+      --loose
+    ports:
+      - "10000:10000"   # Blob
+      - "10001:10001"   # Queue
+      - "10002:10002"   # Table
+    volumes:
+      - azurite-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 10000 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: skillhub-redis
+    restart: unless-stopped
+    # AOF is mandatory for the classifier queue — see AGENTS.md §4 rule #4.
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  cosmos-data:
+  azurite-data:
+  redis-data:
