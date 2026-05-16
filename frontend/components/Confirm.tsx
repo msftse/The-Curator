@@ -41,8 +41,8 @@ export function Confirm({
   }
 
   const confirmClass = destructive
-    ? "bg-rose-600 hover:bg-rose-700"
-    : "bg-emerald-600 hover:bg-emerald-700";
+    ? "bg-ms-red hover:brightness-95"
+    : "bg-ms-green hover:brightness-95";
 
   return (
     <div

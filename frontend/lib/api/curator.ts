@@ -50,9 +50,7 @@ export const curator = {
       { method: "POST" },
     );
   },
-  // ---- Not-yet-implemented backend endpoints ----------------------------
-  // The plan flags these as Phase 1 backend additions that this PR does not
-  // include. The UI catches the resulting failure and renders a placeholder.
+  // ---- Snapshot + run history endpoints --------------------------------
   listSnapshots(): Promise<SnapshotListItem[]> {
     return call<SnapshotListItem[]>("/v1/admin/curator/snapshots");
   },

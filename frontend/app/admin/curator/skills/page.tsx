@@ -78,7 +78,7 @@ export default function SkillsAdminPage() {
       </div>
 
       {error ? (
-        <div className="rounded border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800">
+        <div className="rounded ms-msgbar-danger">
           {String(error)}
         </div>
       ) : isLoading ? (

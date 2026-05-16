@@ -20,11 +20,9 @@ export default function SnapshotsPage() {
       </p>
 
       {error ? (
-        <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
-          Snapshot listing endpoint not available yet
-          (<code>GET /v1/admin/curator/snapshots</code>). Once it ships, this
-          table will populate automatically.
-          <div className="mt-1 text-xs text-amber-900/70">({String(error)})</div>
+        <div className="ms-msgbar-warning">
+          Failed to load snapshots.
+          <div className="mt-1 text-xs text-warning-fg/80">({String(error)})</div>
         </div>
       ) : isLoading ? (
         <div className="h-16 animate-pulse rounded bg-gray-100" />

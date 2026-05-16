@@ -40,8 +40,8 @@ export function MergeSideBySide({ merge }: { merge: MergePayload }) {
         {merge.merged_skill_ids.map((sid) => (
           <InputSkillColumn key={sid} skillId={sid} />
         ))}
-        <div className="rounded border border-emerald-300 bg-emerald-50 p-3">
-          <div className="mb-2 text-xs uppercase text-emerald-700">
+        <div className="rounded border border-success-border bg-success-bg p-3">
+          <div className="mb-2 text-xs uppercase text-success-fg">
             Proposed umbrella
           </div>
           <div className="mb-1 text-sm font-medium">

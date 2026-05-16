@@ -24,7 +24,7 @@ export default function CuratorDashboardPage() {
   return (
     <div className="space-y-6">
       {status.error ? (
-        <div className="rounded border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800">
+        <div className="ms-msgbar-danger">
           Status unavailable: {String(status.error)}
         </div>
       ) : null}
@@ -64,10 +64,9 @@ export default function CuratorDashboardPage() {
           Recent runs
         </h2>
         {runs.error ? (
-          <div className="rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800">
-            Recent-runs listing endpoint not available yet
-            (<code>GET /v1/admin/curator/runs</code>).
-            <div className="mt-1 text-amber-900/70">({String(runs.error)})</div>
+          <div className="ms-msgbar-warning text-xs">
+            Failed to load recent runs.
+            <div className="mt-1 text-warning-fg/80">({String(runs.error)})</div>
           </div>
         ) : runs.isLoading ? (
           <div className="h-12 animate-pulse rounded bg-gray-100" />
@@ -79,7 +78,7 @@ export default function CuratorDashboardPage() {
               <li key={r.run_id} className="px-3 py-2 text-sm">
                 <Link
                   href={`/admin/curator/runs/${encodeURIComponent(r.run_id)}`}
-                  className="font-mono text-sky-700 hover:underline"
+                  className="font-mono text-ms-blue hover:underline"
                 >
                   {r.run_id}
                 </Link>

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { use } from "react";
 
 import { ProposalCard } from "@/components/curator/ProposalCard";
 import { api } from "@/lib/api/client";
@@ -10,9 +11,10 @@ import { useResource } from "@/lib/hooks/useResource";
 export default function ReviewProposalDetailPage({
   params,
 }: {
-  params: { proposalId: string };
+  params: Promise<{ proposalId: string }>;
 }) {
-  const proposalId = decodeURIComponent(params.proposalId);
+  const { proposalId: rawProposalId } = use(params);
+  const proposalId = decodeURIComponent(rawProposalId);
   const search = useSearchParams();
   const runId = search?.get("run_id") ?? "";
 
@@ -26,18 +28,18 @@ export default function ReviewProposalDetailPage({
       <div className="text-xs">
         <Link
           href="/admin/curator/reviews"
-          className="text-sky-700 hover:underline"
+          className="text-ms-blue hover:underline"
         >
           ← back to queue
         </Link>
       </div>
 
       {!runId ? (
-        <div className="rounded border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800">
+        <div className="rounded ms-msgbar-danger">
           Missing <code>run_id</code> query parameter.
         </div>
       ) : error ? (
-        <div className="rounded border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800">
+        <div className="rounded ms-msgbar-danger">
           {String(error)}
         </div>
       ) : isLoading || !data ? (

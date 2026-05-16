@@ -46,7 +46,7 @@ export default function RootLayout({
               >
                 <BrandMark />
                 <span className="leading-tight">
-                  Skill Hub
+                  The Curator
                   <span className="block text-[10px] font-medium uppercase tracking-[0.18em] text-muted">
                     Agentic skills, reviewed
                   </span>
@@ -55,6 +55,7 @@ export default function RootLayout({
 
               <div className="ml-3 hidden flex-1 items-center gap-1 md:flex">
                 <NavLink href="/upload">Upload</NavLink>
+                <NavLink href="/catalog">Catalog</NavLink>
                 <NavLink href="/my-submissions">My submissions</NavLink>
                 <NavLink href="/admin/queue">Review queue</NavLink>
                 <AdminNavLink href="/admin/curator">Curator</AdminNavLink>
@@ -110,7 +111,7 @@ function Footer() {
               <span className="block rounded-[2px] bg-ms-yellow" />
             </span>
             <div>
-              <strong className="font-display text-cream">Skill Hub</strong>
+              <strong className="font-display text-cream">The Curator</strong>
               <div className="text-xs text-cream-dim">
                 Sanctioned skills. Reviewed &amp; audit-trailed.
               </div>
@@ -125,6 +126,14 @@ function Footer() {
             Product
           </h4>
           <ul className="flex flex-col gap-2 text-sm">
+            <li>
+              <Link
+                href="/catalog"
+                className="text-cream-dim hover:text-cream hover:no-underline"
+              >
+                Browse catalog
+              </Link>
+            </li>
             <li>
               <Link
                 href="/upload"

@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
-
 import { useAdminProbe } from "@/lib/hooks/useAdminProbe";
+import { NavLink } from "./NavLink";
 
 export function AdminNavLink({
   href,
@@ -13,9 +12,5 @@ export function AdminNavLink({
 }) {
   const { isAdmin } = useAdminProbe();
   if (!isAdmin) return null;
-  return (
-    <Link href={href} className="text-gray-600 hover:text-gray-900">
-      {children}
-    </Link>
-  );
+  return <NavLink href={href}>{children}</NavLink>;
 }

@@ -19,7 +19,7 @@ export function CountsByStatus() {
   }
   if (error) {
     return (
-      <div className="rounded border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800">
+      <div className="ms-msgbar-danger">
         Counts unavailable: {String(error)}
       </div>
     );

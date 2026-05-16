@@ -9,14 +9,14 @@ import type { PatchPayload } from "@/lib/api/types";
 
 function DiffPre({ text }: { text: string }) {
   return (
-    <pre className="overflow-x-auto rounded bg-gray-900 p-3 text-xs leading-snug">
+    <pre className="overflow-x-auto rounded bg-ink p-3 text-xs leading-snug">
       {text.split("\n").map((line, i) => {
-        let cls = "text-gray-300";
+        let cls = "text-cream/70";
         if (line.startsWith("+") && !line.startsWith("+++"))
-          cls = "text-emerald-300";
+          cls = "text-ms-green";
         else if (line.startsWith("-") && !line.startsWith("---"))
-          cls = "text-rose-300";
-        else if (line.startsWith("@@")) cls = "text-sky-300";
+          cls = "text-ms-red";
+        else if (line.startsWith("@@")) cls = "text-gold";
         return (
           <div key={i} className={cls}>
             {line || "\u00A0"}
@@ -87,8 +87,8 @@ export function PatchDiffView({ patch }: { patch: PatchPayload }) {
             )}
           </div>
         ) : null}
-        <div className="rounded border border-emerald-200 p-3">
-          <div className="mb-2 text-xs uppercase text-emerald-700">Proposed</div>
+        <div className="rounded border border-success-border p-3">
+          <div className="mb-2 text-xs uppercase text-success-fg">Proposed</div>
           <MarkdownView source={patch.patch_text} />
         </div>
       </div>

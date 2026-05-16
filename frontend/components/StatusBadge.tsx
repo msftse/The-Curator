@@ -1,37 +1,62 @@
 import type { SkillStatus, ClassifierStatus } from "@/lib/api/types";
 
-const STATUS_COLORS: Record<SkillStatus, string> = {
-  pending: "bg-amber-100 text-amber-800",
-  classified: "bg-sky-100 text-sky-800",
-  approved: "bg-emerald-100 text-emerald-800",
-  rejected: "bg-rose-100 text-rose-800",
-  stale: "bg-gray-200 text-gray-700",
-  archived: "bg-gray-300 text-gray-800",
+type Tone = {
+  classes: string;
+  dot: string;
 };
 
-const CLASSIFIER_COLORS: Record<ClassifierStatus, string> = {
-  queued: "bg-amber-100 text-amber-800",
-  running: "bg-sky-100 text-sky-800",
-  done: "bg-emerald-100 text-emerald-800",
-  failed: "bg-rose-100 text-rose-800",
+const STATUS_TONES: Record<SkillStatus, Tone> = {
+  pending: {
+    classes: "bg-warning-bg text-warning-fg border border-warning-border",
+    dot: "bg-ms-yellow",
+  },
+  classified: {
+    classes: "bg-info-bg text-info-fg border border-info-border",
+    dot: "bg-ms-blue",
+  },
+  approved: {
+    classes: "bg-success-bg text-success-fg border border-success-border",
+    dot: "bg-ms-green",
+  },
+  rejected: {
+    classes: "bg-danger-bg text-danger-fg border border-danger-border",
+    dot: "bg-ms-red",
+  },
+  stale: {
+    classes: "bg-bg-2 text-muted border border-line-2",
+    dot: "bg-muted",
+  },
+  archived: {
+    classes: "bg-bg-2 text-ink-2 border border-line-2",
+    dot: "bg-ink-2",
+  },
 };
 
-export function StatusBadge({ status }: { status: SkillStatus }) {
+const CLASSIFIER_TONES: Record<ClassifierStatus, Tone> = {
+  queued: STATUS_TONES.pending,
+  running: STATUS_TONES.classified,
+  done: STATUS_TONES.approved,
+  failed: STATUS_TONES.rejected,
+};
+
+function Badge({ tone, label }: { tone: Tone; label: string }) {
   return (
-    <span
-      className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[status]}`}
-    >
-      {status}
+    <span className={"ms-badge " + tone.classes}>
+      <span
+        aria-hidden
+        className={"h-1.5 w-1.5 rounded-full " + tone.dot}
+      />
+      {label}
     </span>
   );
 }
 
+export function StatusBadge({ status }: { status: SkillStatus }) {
+  return <Badge tone={STATUS_TONES[status]} label={status} />;
+}
+
 export function ClassifierBadge({ status }: { status: ClassifierStatus }) {
   return (
-    <span
-      className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${CLASSIFIER_COLORS[status]}`}
-    >
-      classifier: {status}
-    </span>
+    <Badge tone={CLASSIFIER_TONES[status]} label={`classifier: ${status}`} />
   );
 }

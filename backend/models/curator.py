@@ -100,3 +100,17 @@ class CuratorStatus(BaseModel):
     last_run: CuratorRunRecord | None = None
     schedule_enabled: bool = True
     schedule_next: datetime | None = None
+
+
+class SnapshotListItem(BaseModel):
+    """Lightweight summary row for the admin snapshots table.
+
+    Built from `{snapshots-container}/{name}/manifest.json` (for
+    `captured_at` and `skills_count`) plus blob properties on
+    `{snapshots-container}/{name}/skills.tar.gz` (for `size_bytes`).
+    """
+
+    name: str
+    captured_at: datetime
+    skills_count: int
+    size_bytes: int

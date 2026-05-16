@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { api } from "@/lib/api/client";
 import type { UploadResponse } from "@/lib/api/types";
@@ -10,6 +10,8 @@ export default function UploadPage() {
   const [result, setResult] = useState<UploadResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -22,6 +24,8 @@ export default function UploadPage() {
       form.append("file", file);
       const r = await api.uploads.create(form);
       setResult(r);
+      setFile(null);
+      if (inputRef.current) inputRef.current.value = "";
     } catch (err) {
       setError(String(err));
     } finally {
@@ -29,48 +33,241 @@ export default function UploadPage() {
     }
   }
 
+  function onDrop(e: React.DragEvent<HTMLLabelElement>) {
+    e.preventDefault();
+    setDragOver(false);
+    const f = e.dataTransfer.files?.[0];
+    if (f) setFile(f);
+  }
+
   return (
-    <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Upload a skill</h1>
-      <p className="text-sm text-gray-600">
-        Drop in a single SKILL.md or a tar/tar.gz bundle (max 10 MB).
-      </p>
-      <form onSubmit={submit} className="space-y-3">
-        <input
-          type="file"
-          accept=".md,.tar,.gz,.tgz"
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          className="block w-full rounded border border-gray-300 bg-white p-2"
-        />
-        <button
-          type="submit"
-          disabled={!file || busy}
-          className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+    <div className="mx-auto max-w-3xl px-6 py-12">
+      <header className="mb-8 space-y-2 text-center">
+        <span className="ms-eyebrow-blue">Contributor</span>
+        <h1 className="font-display text-[clamp(28px,4vw,40px)] font-bold tracking-ms-display text-ink">
+          Submit a skill
+        </h1>
+        <p className="mx-auto max-w-md text-sm leading-relaxed text-muted">
+          Drop in a single <code className="rounded bg-bg-2 px-1 py-0.5 font-mono text-[12px]">SKILL.md</code>{" "}
+          or a <code className="rounded bg-bg-2 px-1 py-0.5 font-mono text-[12px]">tar / tar.gz</code> bundle.
+          Maximum size 10&nbsp;MB.
+        </p>
+      </header>
+
+      <div className="my-8 ms-divider">
+        <div className="ms-divider-line" />
+        <div className="ms-divider-icon">◆</div>
+        <div className="ms-divider-line" />
+      </div>
+
+      <form onSubmit={submit} className="ms-card space-y-5 p-7">
+        <label
+          htmlFor="skill-file"
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={onDrop}
+          className={
+            "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed p-10 text-center transition-colors duration-150 " +
+            (dragOver
+              ? "border-ms-blue bg-ms-blue/[0.04] text-ms-blue"
+              : "border-line-2 bg-bg text-muted hover:border-ms-blue hover:bg-ms-blue/[0.04] hover:text-ms-blue")
+          }
         >
-          {busy ? "Uploading…" : "Upload"}
-        </button>
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-ms-blue/10 text-ms-blue">
+            <svg
+              aria-hidden
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 16V4M7 9l5-5 5 5" />
+              <path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+            </svg>
+          </div>
+          <div className="font-display text-[15px] font-semibold text-ink">
+            {file ? file.name : "Drop SKILL.md or click to choose"}
+          </div>
+          <small className="text-xs text-muted">
+            For multi-file skills, package as <code className="font-mono">tar.gz</code>.
+            Accepted: .md, .tar, .tar.gz, .tgz · up to 10&nbsp;MB
+          </small>
+          <input
+            id="skill-file"
+            ref={inputRef}
+            type="file"
+            accept=".md,.tar,.gz,.tgz"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            className="sr-only"
+          />
+        </label>
+
+        {file && (
+          <div className="flex items-center justify-between rounded-md border border-line bg-bg-2 px-3.5 py-2.5 text-sm">
+            <div className="flex items-center gap-2 text-ink-2">
+              <FileIcon />
+              <span className="font-semibold">{file.name}</span>
+              <span className="text-xs text-muted">
+                {(file.size / 1024).toFixed(1)} KB
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setFile(null);
+                if (inputRef.current) inputRef.current.value = "";
+              }}
+              className="rounded px-2 py-0.5 text-xs text-muted transition-colors hover:bg-white hover:text-ink"
+            >
+              Remove
+            </button>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between gap-3 border-t border-line pt-4">
+          <small className="text-xs text-muted">
+            Stored on Cosmos &amp; Blob. Audit-trailed.
+          </small>
+          <button
+            type="submit"
+            disabled={!file || busy}
+            className="ms-btn-primary"
+          >
+            {busy && <Spinner />}
+            {busy ? "Uploading…" : "Submit to hub →"}
+          </button>
+        </div>
       </form>
+
       {error && (
-        <div className="rounded border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800">
-          {error}
+        <div className="mt-5 ms-msgbar-danger">
+          <DotIcon />
+          <span>{error}</span>
         </div>
       )}
+
       {result && (
-        <div className="rounded border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
-          <p>
-            Uploaded as <code>{result.skill_id}</code> ({result.version}) —
-            status: <strong>{result.status}</strong>, classifier:{" "}
-            <strong>{result.classifier_status}</strong>
-          </p>
-          <p className="mt-2">
-            Watch progress on{" "}
-            <a className="underline" href="/my-submissions">
-              /my-submissions
-            </a>
-            .
-          </p>
+        <div className="mt-5 ms-msgbar-success">
+          <CheckIcon />
+          <div className="space-y-1">
+            <div>
+              Uploaded as <code className="font-mono">{result.skill_id}</code> (
+              {result.version}) — status{" "}
+              <strong className="font-semibold">{result.status}</strong>,
+              classifier{" "}
+              <strong className="font-semibold">
+                {result.classifier_status}
+              </strong>
+              .
+            </div>
+            <div>
+              Watch progress on{" "}
+              <a
+                className="font-semibold underline underline-offset-2"
+                href="/my-submissions"
+              >
+                My submissions
+              </a>
+              .
+            </div>
+          </div>
         </div>
       )}
     </div>
+  );
+}
+
+function FileIcon() {
+  return (
+    <svg
+      aria-hidden
+      width="16"
+      height="16"
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M5 3h7l4 4v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
+      <path d="M12 3v4h4" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg
+      aria-hidden
+      width="16"
+      height="16"
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="mt-0.5 shrink-0"
+    >
+      <path d="M4 10l4 4 8-8" />
+    </svg>
+  );
+}
+
+function DotIcon() {
+  return (
+    <svg
+      aria-hidden
+      width="16"
+      height="16"
+      viewBox="0 0 20 20"
+      fill="currentColor"
+      className="mt-0.5 shrink-0"
+    >
+      <circle cx="10" cy="10" r="8" opacity="0.15" />
+      <path
+        d="M10 5v6"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <circle cx="10" cy="14" r="1" />
+    </svg>
+  );
+}
+
+function Spinner() {
+  return (
+    <svg
+      aria-hidden
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      className="animate-spin"
+    >
+      <circle
+        cx="12"
+        cy="12"
+        r="9"
+        stroke="currentColor"
+        strokeWidth="3"
+        opacity="0.25"
+      />
+      <path
+        d="M21 12a9 9 0 0 0-9-9"
+        stroke="currentColor"
+        strokeWidth="3"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }

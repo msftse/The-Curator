@@ -12,28 +12,28 @@ function formatDate(iso: string | null | undefined): string {
 }
 
 const REASON_COLORS: Record<string, string> = {
-  steady_state: "bg-gray-100 text-gray-700",
-  stale_30d: "bg-amber-100 text-amber-800",
-  archive_90d: "bg-rose-100 text-rose-800",
-  pinned: "bg-indigo-100 text-indigo-800",
-  missing_usage_data: "bg-gray-200 text-gray-700",
+  steady_state: "bg-bg-2 text-ink-2",
+  stale_30d: "bg-warning-bg text-warning-fg",
+  archive_90d: "bg-danger-bg text-danger-fg",
+  pinned: "bg-violet-dim text-violet-dark",
+  missing_usage_data: "bg-bg-2 text-muted-2",
 };
 
 export function RunRecordCard({ record }: { record: CuratorRunRecord }) {
   return (
-    <div className="rounded border border-gray-200 bg-white p-4">
+    <div className="rounded border border-line bg-white p-4">
       <div className="flex flex-wrap items-baseline gap-2">
-        <code className="text-sm font-semibold">{record.run_id}</code>
+        <code className="text-sm font-semibold text-ink">{record.run_id}</code>
         {record.dry_run ? (
-          <span className="inline-block rounded bg-sky-100 px-2 py-0.5 text-xs text-sky-800">
+          <span className="inline-block rounded bg-info-bg px-2 py-0.5 text-xs text-info-fg">
             dry-run
           </span>
         ) : (
-          <span className="inline-block rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800">
+          <span className="inline-block rounded bg-success-bg px-2 py-0.5 text-xs text-success-fg">
             applied
           </span>
         )}
-        <span className="text-xs text-gray-500">
+        <span className="text-xs text-muted">
           {formatDate(record.started_at)} → {formatDate(record.finished_at)}
         </span>
       </div>
@@ -43,7 +43,7 @@ export function RunRecordCard({ record }: { record: CuratorRunRecord }) {
           Snapshot:{" "}
           <Link
             href="/admin/curator/snapshots"
-            className="font-mono text-sky-700 hover:underline"
+            className="font-mono text-ms-blue hover:underline"
           >
             {record.snapshot_name}
           </Link>
@@ -51,17 +51,17 @@ export function RunRecordCard({ record }: { record: CuratorRunRecord }) {
       ) : null}
 
       <div className="mt-3">
-        <div className="text-xs uppercase text-gray-500">
+        <div className="text-xs uppercase text-muted">
           Transitions ({record.transitions.length})
         </div>
         {record.transitions.length === 0 ? (
-          <div className="mt-1 text-sm text-gray-500">
+          <div className="mt-1 text-sm text-muted">
             No transitions — steady state.
           </div>
         ) : (
           <table className="mt-1 w-full text-sm">
             <thead>
-              <tr className="border-b text-left text-gray-500">
+              <tr className="border-b border-line text-left text-muted">
                 <th className="py-1">Skill</th>
                 <th>Before</th>
                 <th>After</th>
@@ -71,14 +71,14 @@ export function RunRecordCard({ record }: { record: CuratorRunRecord }) {
             </thead>
             <tbody>
               {record.transitions.map((t, i) => (
-                <tr key={`${t.skill_id}:${i}`} className="border-b">
+                <tr key={`${t.skill_id}:${i}`} className="border-b border-line">
                   <td className="py-1 font-mono text-xs">{t.skill_id}</td>
                   <td>{t.before}</td>
                   <td>{t.after}</td>
                   <td>
                     <span
                       className={`inline-block rounded px-2 py-0.5 text-xs ${
-                        REASON_COLORS[t.reason] ?? "bg-gray-100 text-gray-700"
+                        REASON_COLORS[t.reason] ?? "bg-bg-2 text-ink-2"
                       }`}
                     >
                       {t.reason}
@@ -94,12 +94,12 @@ export function RunRecordCard({ record }: { record: CuratorRunRecord }) {
 
       {record.skipped_pinned.length > 0 ? (
         <div className="mt-3">
-          <div className="text-xs uppercase text-gray-500">Skipped (pinned)</div>
+          <div className="text-xs uppercase text-muted">Skipped (pinned)</div>
           <div className="mt-1 flex flex-wrap gap-1">
             {record.skipped_pinned.map((s) => (
               <span
                 key={s}
-                className="inline-block rounded bg-indigo-100 px-2 py-0.5 font-mono text-xs text-indigo-800"
+                className="inline-block rounded bg-violet-dim px-2 py-0.5 font-mono text-xs text-violet-dark"
               >
                 {s}
               </span>

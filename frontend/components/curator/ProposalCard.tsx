@@ -10,9 +10,9 @@ import { PatchDiffView } from "./PatchDiffView";
 import type { ProposalKind, ReviewProposal } from "@/lib/api/types";
 
 const KIND_COLORS: Record<ProposalKind, string> = {
-  patch: "bg-amber-100 text-amber-800",
-  merge: "bg-violet-100 text-violet-800",
-  keep: "bg-sky-100 text-sky-800",
+  patch: "bg-warning-bg text-warning-fg",
+  merge: "bg-violet-dim text-violet-dark",
+  keep: "bg-info-bg text-info-fg",
 };
 
 function formatDate(iso: string): string {
@@ -41,14 +41,14 @@ export function ProposalCard({
   );
 
   return (
-    <div className="space-y-3 rounded border border-gray-200 bg-white p-4">
+    <div className="space-y-3 rounded border border-line bg-white p-4">
       <div className="flex flex-wrap items-baseline gap-2">
         {kindBadge}
-        <span className="text-xs text-gray-500">
+        <span className="text-xs text-muted">
           confidence {Math.round(proposal.confidence * 100)}% ·{" "}
           {formatDate(proposal.created_at)}
         </span>
-        <div className="ml-auto text-xs text-gray-500">
+        <div className="ml-auto text-xs text-muted">
           targets:{" "}
           <code className="font-mono">
             {proposal.target_skill_ids.join(", ") || "—"}
@@ -72,7 +72,7 @@ export function ProposalCard({
         <div className="text-right">
           <Link
             href={`/admin/curator/reviews/${encodeURIComponent(proposal.id)}?run_id=${encodeURIComponent(proposal.run_id)}`}
-            className="text-xs text-sky-700 hover:underline"
+            className="text-xs text-ms-blue hover:underline"
           >
             Open detail →
           </Link>

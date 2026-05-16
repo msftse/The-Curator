@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { use, useState } from "react";
 
 import { RunRecordCard } from "@/components/curator/RunRecordCard";
 import { MarkdownView } from "@/components/MarkdownView";
@@ -12,9 +12,10 @@ import type { CuratorRunRecord } from "@/lib/api/types";
 export default function RunReportPage({
   params,
 }: {
-  params: { runId: string };
+  params: Promise<{ runId: string }>;
 }) {
-  const runId = decodeURIComponent(params.runId);
+  const { runId: rawRunId } = use(params);
+  const runId = decodeURIComponent(rawRunId);
   const [tab, setTab] = useState<"summary" | "report">("summary");
 
   const runs = useResource(["curator", "runs", 50], () =>
@@ -31,23 +32,23 @@ export default function RunReportPage({
   return (
     <div className="space-y-4">
       <div className="text-xs">
-        <Link href="/admin/curator" className="text-sky-700 hover:underline">
+        <Link href="/admin/curator" className="text-ms-blue hover:underline">
           ← back to overview
         </Link>
       </div>
-      <h2 className="text-lg font-semibold">
+      <h2 className="text-lg font-semibold text-ink">
         Run <code className="font-mono">{runId}</code>
       </h2>
 
-      <div className="flex gap-3 border-b border-gray-200 text-sm">
+      <div className="flex gap-3 border-b border-line text-sm">
         {(["summary", "report"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
             className={
               tab === t
-                ? "border-b-2 border-sky-600 pb-1 font-semibold text-gray-900"
-                : "pb-1 text-gray-600 hover:text-gray-900"
+                ? "border-b-2 border-ms-blue pb-1 font-semibold text-ink"
+                : "pb-1 text-muted hover:text-ink"
             }
           >
             {t === "summary" ? "Summary" : "Report"}
@@ -57,26 +58,25 @@ export default function RunReportPage({
 
       {tab === "summary" ? (
         runs.error ? (
-          <div className="rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800">
+          <div className="ms-msgbar-warning text-xs">
             Recent-runs listing endpoint not available yet
             (<code>GET /v1/admin/curator/runs</code>).
-            <div className="mt-1 text-amber-900/70">({String(runs.error)})</div>
+            <div className="mt-1 text-warning-fg/80">({String(runs.error)})</div>
           </div>
         ) : runs.isLoading ? (
-          <div className="h-24 animate-pulse rounded bg-gray-100" />
+          <div className="h-24 animate-pulse rounded bg-bg-2" />
         ) : rec ? (
           <RunRecordCard record={rec} />
         ) : (
-          <p className="text-sm text-gray-500">Run not found in recent list.</p>
+          <p className="text-sm text-muted">Run not found in recent list.</p>
         )
       ) : report.error ? (
-        <div className="rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800">
-          Run-report endpoint not available yet
-          (<code>GET /v1/admin/curator/runs/&#123;run_id&#125;/report</code>).
-          <div className="mt-1 text-amber-900/70">({String(report.error)})</div>
+        <div className="ms-msgbar-warning text-xs">
+          Failed to load run report.
+          <div className="mt-1 text-warning-fg/80">({String(report.error)})</div>
         </div>
       ) : report.isLoading ? (
-        <div className="h-24 animate-pulse rounded bg-gray-100" />
+        <div className="h-24 animate-pulse rounded bg-bg-2" />
       ) : (
         <MarkdownView source={report.data ?? ""} />
       )}

@@ -95,6 +95,11 @@ class RestoreFailed(DomainError):
     http_status = status.HTTP_500_INTERNAL_SERVER_ERROR
 
 
+class CuratorRunReportNotFound(DomainError):
+    error_code = "CURATOR_RUN_REPORT_NOT_FOUND"
+    http_status = status.HTTP_404_NOT_FOUND
+
+
 # ---- M3 — Curator LLM review ----
 
 

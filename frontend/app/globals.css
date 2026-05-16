@@ -4,8 +4,260 @@
 
 :root {
   color-scheme: light;
+  /* Curated Intelligence palette
+     - Primary  Curator Indigo  #5B5FEF
+     - Secondary Signal Violet  #8B5CF6
+     - Accent   Artifact Gold   #F5C542
+     - Deep bg  Obsidian Navy   #0B1020
+     - Surface  Slate Ink       #171B2E
+     - Text     Porcelain White #F8FAFC
+     - Muted    Mist Gray       #94A3B8
+  */
+  --ms-blue: #5b5fef;
+  --ms-blue-dark: #4548d9;
+  --ms-red: #ef4444;
+  --ms-green: #10b981;
+  --ms-yellow: #f5c542;
+  --violet: #8b5cf6;
+  --ink: #0b1020;
+  --ink-2: #1e2340;
+  --ink-surface: #171b2e;
+  --cream: #f8fafc;
+  --gold: #f5c542;
+  --line: #e2e8f0;
+  --line-2: #cbd5e1;
+  --bg: #f8fafc;
+  --bg-2: #eef1f7;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  @apply bg-gray-50 text-gray-900;
+  background: var(--bg);
+  color: var(--ink);
+  font-family:
+    "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont,
+    "SF Pro Text", system-ui, sans-serif;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a {
+  color: var(--ms-blue);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ms-blue);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (pointer: fine) {
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 6px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+  }
+}
+
+@layer components {
+  /* ---------- Buttons ---------- */
+  .ms-btn {
+    @apply inline-flex select-none items-center justify-center gap-1.5
+      rounded-md border border-transparent px-4 py-2 text-sm font-semibold
+      transition-all duration-150 ease-out
+      disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .ms-btn-primary {
+    @apply ms-btn bg-ms-blue text-white hover:bg-ms-blue-dark hover:no-underline;
+  }
+  .ms-btn-ghost {
+    @apply ms-btn border-line-2 bg-transparent text-ink-2 hover:bg-bg-2 hover:no-underline;
+  }
+  .ms-btn-cream {
+    @apply ms-btn border border-cream/95 bg-cream/95 text-ink hover:bg-cream;
+  }
+  .ms-btn-cream-ghost {
+    @apply ms-btn border border-cream/60 bg-transparent text-cream hover:bg-cream/10 hover:no-underline;
+  }
+  .ms-btn-success {
+    @apply ms-btn bg-ms-green text-white hover:brightness-95;
+  }
+  .ms-btn-danger {
+    @apply ms-btn bg-ms-red text-white hover:brightness-95;
+  }
+
+  /* ---------- Surfaces ---------- */
+  .ms-card {
+    @apply relative overflow-hidden rounded-lg border border-line bg-white shadow-ms-sm
+      transition-all duration-200 ease-out;
+  }
+  .ms-card-hover {
+    @apply hover:-translate-y-0.5 hover:border-ms-blue/40 hover:shadow-ms-lg;
+  }
+  /* Top curator-gradient stripe revealed on hover (violet → indigo → gold) */
+  .ms-card-stripe::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 3px;
+    background: linear-gradient(
+      90deg,
+      var(--violet),
+      var(--ms-blue),
+      var(--gold)
+    );
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .ms-card-stripe:hover::before {
+    opacity: 1;
+  }
+
+  /* Dark section with inset gold border (cinematic) */
+  .section-dark {
+    @apply relative overflow-hidden bg-ink text-cream;
+  }
+  .section-dark > .section-dark-frame {
+    @apply pointer-events-none absolute z-0;
+    inset: 1.5rem;
+    border: 1px solid var(--gold);
+    opacity: 0.35;
+  }
+  @media (max-width: 900px) {
+    .section-dark > .section-dark-frame {
+      inset: 0.75rem;
+    }
+  }
+
+  /* ---------- Inputs ---------- */
+  .ms-input {
+    @apply block w-full rounded-md border border-line-2 bg-white px-3 py-2
+      text-sm text-ink shadow-sm outline-none
+      transition-colors duration-150
+      placeholder:text-muted
+      focus:border-ms-blue focus:ring-[3px] focus:ring-ms-blue/20
+      disabled:bg-bg-2 disabled:text-muted-2;
+  }
+  .ms-select {
+    @apply ms-input pr-8;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%23605e5c' stroke-width='1.5'><path d='M2.5 4.5l3.5 3.5 3.5-3.5'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 12px;
+    appearance: none;
+  }
+
+  /* ---------- Message bars ---------- */
+  .ms-msgbar {
+    @apply flex items-start gap-2 rounded-md border px-3.5 py-2.5 text-sm;
+  }
+  .ms-msgbar-info {
+    @apply ms-msgbar border-info-border bg-info-bg text-info-fg;
+  }
+  .ms-msgbar-success {
+    @apply ms-msgbar border-success-border bg-success-bg text-success-fg;
+  }
+  .ms-msgbar-warning {
+    @apply ms-msgbar border-warning-border bg-warning-bg text-warning-fg;
+  }
+  .ms-msgbar-danger {
+    @apply ms-msgbar border-danger-border bg-danger-bg text-danger-fg;
+  }
+
+  /* ---------- Badges / chips ---------- */
+  .ms-badge {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5
+      text-[11px] font-semibold leading-4;
+  }
+  .ms-chip {
+    @apply inline-flex items-center rounded-full border border-line bg-bg-2
+      px-2.5 py-0.5 text-[11px] font-medium text-ink-2;
+  }
+
+  /* ---------- Data grid ---------- */
+  .ms-grid {
+    @apply w-full border-separate text-sm;
+    border-spacing: 0;
+  }
+  .ms-grid thead th {
+    @apply sticky top-0 z-[1] border-b border-line bg-bg-2 px-4 py-2.5
+      text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-muted;
+  }
+  .ms-grid tbody td {
+    @apply border-b border-line px-4 py-3 align-top text-ink-2;
+  }
+  .ms-grid tbody tr {
+    @apply transition-colors duration-150 hover:bg-bg-2/60;
+  }
+
+  /* ---------- Section ornament ---------- */
+  .ms-divider {
+    @apply flex items-center justify-center gap-4;
+  }
+  .ms-divider-line {
+    @apply h-px w-16 max-w-[120px] flex-1;
+    background: rgba(200, 169, 110, 0.35);
+  }
+  .ms-divider-icon {
+    @apply text-[0.65rem];
+    color: var(--gold);
+    opacity: 0.85;
+  }
+
+  /* Top "section label" — small caps, tracked, gold on dark / blue on light */
+  .ms-eyebrow {
+    @apply block text-[11px] font-semibold uppercase tracking-[0.25em];
+  }
+  .ms-eyebrow-gold {
+    @apply ms-eyebrow text-gold;
+  }
+  .ms-eyebrow-blue {
+    @apply ms-eyebrow text-ms-blue;
+  }
+
+  /* Curator gradient text accent — violet → indigo → gold shine */
+  .ms-accent-text {
+    background: linear-gradient(
+      90deg,
+      var(--violet),
+      var(--ms-blue),
+      var(--gold)
+    );
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: ms-shine 8s linear infinite;
+  }
+
+  /* Top of footer / dark sections: curator gradient stripe */
+  .ms-gradient-stripe {
+    background: linear-gradient(
+      90deg,
+      var(--violet),
+      var(--ms-blue),
+      var(--gold)
+    );
+  }
 }

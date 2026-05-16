@@ -58,8 +58,8 @@ export function SkillAdminRow({
           onClick={() => void toggle()}
           className={
             skill.pinned
-              ? "rounded bg-indigo-600 px-3 py-1 text-xs text-white disabled:opacity-50"
-              : "rounded border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              ? "rounded bg-violet px-3 py-1 text-xs text-white hover:bg-violet-dark disabled:opacity-50"
+              : "rounded border border-line-2 px-3 py-1 text-xs text-ink-2 hover:bg-bg-2 disabled:opacity-50"
           }
         >
           {skill.pinned ? "Pinned · click to unpin" : "Pin"}
@@ -70,15 +70,15 @@ export function SkillAdminRow({
           <button
             disabled={busy !== null}
             onClick={() => void restore()}
-            className="rounded bg-emerald-600 px-3 py-1 text-xs text-white disabled:opacity-50"
+            className="rounded bg-ms-green px-3 py-1 text-xs text-white hover:brightness-95 disabled:opacity-50"
           >
             Restore
           </button>
         ) : (
-          <span className="text-xs text-gray-400">—</span>
+          <span className="text-xs text-muted">—</span>
         )}
         {error ? (
-          <div className="mt-1 text-xs text-rose-700">{error}</div>
+          <div className="mt-1 text-xs text-danger-fg">{error}</div>
         ) : null}
       </td>
     </tr>

@@ -43,7 +43,7 @@ export function SnapshotRow({
       <td>
         <button
           onClick={() => setOpen(true)}
-          className="rounded bg-amber-600 px-3 py-1 text-xs text-white hover:bg-amber-700"
+          className="rounded bg-gold px-3 py-1 text-xs font-semibold text-ink hover:brightness-95"
         >
           Rollback…
         </button>

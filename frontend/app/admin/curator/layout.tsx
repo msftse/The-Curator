@@ -9,8 +9,8 @@ export default function CuratorLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Curator</h1>
+    <div className="mx-auto max-w-[1280px] space-y-4 px-6 py-12">
+      <h1 className="font-display text-[28px] font-bold tracking-ms-display text-ink">Curator</h1>
       <RequireAdmin>
         <CuratorNav />
         <div>{children}</div>

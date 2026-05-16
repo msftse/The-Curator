@@ -74,38 +74,38 @@ export function ApproveRejectBar({
           onClick={() =>
             proposal.kind === "merge" ? setConfirmMerge(true) : void doApprove()
           }
-          className="rounded bg-emerald-600 px-3 py-1 text-sm text-white disabled:opacity-50"
+          className="rounded bg-ms-green px-3 py-1 text-sm text-white hover:brightness-95 disabled:opacity-50"
         >
           Approve
         </button>
         <button
           disabled={busy !== null}
           onClick={() => setRejecting((v) => !v)}
-          className="rounded bg-rose-600 px-3 py-1 text-sm text-white disabled:opacity-50"
+          className="rounded bg-ms-red px-3 py-1 text-sm text-white hover:brightness-95 disabled:opacity-50"
         >
           Reject
         </button>
       </div>
       {rejecting ? (
-        <div className="space-y-2 rounded border border-rose-200 bg-rose-50 p-2">
+        <div className="space-y-2 rounded border border-danger-border bg-danger-bg p-2">
           <textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder="Optional reason"
-            className="block w-full rounded border border-gray-300 px-2 py-1 text-xs"
+            className="block w-full rounded border border-line-2 px-2 py-1 text-xs"
             rows={3}
           />
           <button
             disabled={busy !== null}
             onClick={() => void doReject()}
-            className="rounded bg-rose-700 px-3 py-1 text-xs text-white disabled:opacity-50"
+            className="rounded bg-ms-red px-3 py-1 text-xs text-white hover:brightness-95 disabled:opacity-50"
           >
             Confirm reject
           </button>
         </div>
       ) : null}
       {error ? (
-        <div className="rounded border border-rose-300 bg-rose-50 p-2 text-xs text-rose-800">
+        <div className="ms-msgbar-danger text-xs">
           {error}
         </div>
       ) : null}

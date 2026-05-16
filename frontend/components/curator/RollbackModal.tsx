@@ -70,7 +70,7 @@ export function RollbackModal({
             />
           </label>
           {error ? (
-            <div className="rounded border border-rose-300 bg-rose-50 p-2 text-xs text-rose-800">
+            <div className="ms-msgbar-danger text-xs">
               {error}
             </div>
           ) : null}

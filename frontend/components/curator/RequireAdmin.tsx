@@ -16,7 +16,7 @@ export function RequireAdmin({ children }: { children: React.ReactNode }) {
 
   if (!isAdmin) {
     return (
-      <div className="rounded border border-rose-300 bg-rose-50 p-4 text-sm text-rose-800">
+      <div className="rounded border border-danger-border bg-danger-bg p-4 text-sm text-danger-fg">
         <h2 className="text-base font-semibold">Admins only.</h2>
         <p className="mt-1">
           You don&apos;t have access to the curator admin console.
@@ -27,7 +27,7 @@ export function RequireAdmin({ children }: { children: React.ReactNode }) {
           owner to add you, then sign out and back in to refresh your token.
         </p>
         {error ? (
-          <p className="mt-2 text-xs text-rose-700/80">
+          <p className="mt-2 text-xs text-danger-fg/80">
             (probe error: {String(error)})
           </p>
         ) : null}

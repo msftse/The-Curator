@@ -82,34 +82,34 @@ export function RunControls({
         <button
           disabled={busy !== null || paused}
           onClick={() => void pause()}
-          className="rounded bg-amber-600 px-3 py-1 text-sm text-white disabled:opacity-50"
+          className="rounded bg-gold px-3 py-1 text-sm font-semibold text-ink hover:brightness-95 disabled:opacity-50"
         >
           Pause
         </button>
         <button
           disabled={busy !== null || !paused}
           onClick={() => void resume()}
-          className="rounded bg-sky-600 px-3 py-1 text-sm text-white disabled:opacity-50"
+          className="rounded bg-ms-blue px-3 py-1 text-sm text-white hover:bg-ms-blue-dark disabled:opacity-50"
         >
           Resume
         </button>
         <button
           disabled={busy !== null}
           onClick={() => void dryRun()}
-          className="rounded bg-gray-700 px-3 py-1 text-sm text-white disabled:opacity-50"
+          className="rounded bg-ink-2 px-3 py-1 text-sm text-cream hover:brightness-110 disabled:opacity-50"
         >
           {busy === "dry" ? "Running dry-run…" : "Dry-run"}
         </button>
         <button
           disabled={busy !== null}
           onClick={() => setConfirmRun(true)}
-          className="rounded bg-emerald-600 px-3 py-1 text-sm text-white disabled:opacity-50"
+          className="rounded bg-ms-green px-3 py-1 text-sm text-white hover:brightness-95 disabled:opacity-50"
         >
           Run
         </button>
       </div>
       {error ? (
-        <div className="rounded border border-rose-300 bg-rose-50 p-2 text-xs text-rose-800">
+        <div className="ms-msgbar-danger text-xs">
           {error}
         </div>
       ) : null}
