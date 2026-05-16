@@ -1,103 +1,113 @@
 # Agentic Skill Hub — Product Requirements Document
 
-**Status:** Draft v0.1
+**Status:** Draft v0.2
 **Owner:** Michael Liav
 **Last updated:** 2026-05-16
 
 ---
 
-## 1. Summary
+## 1. Executive Summary
 
-Agentic Skill Hub is an internal web platform for submitting, reviewing, publishing, and maintaining reusable agent skills (SKILL.md bundles compatible with Hermes Agent and similar agentic frameworks).
+Agentic Skill Hub is an internal web platform for submitting, reviewing, publishing, and maintaining reusable agent skills (SKILL.md bundles compatible with Hermes Agent and similar agentic frameworks). It turns ad-hoc, scattered prompt and procedure knowledge — currently spread across individual laptops, Notion pages, and copy-pasted prompts — into a governed, queryable, version-tracked library.
 
-Anyone in the organization can upload a skill. A classifier agent auto-tags it. A manager approves or rejects it. Approved skills are published to a shared artifact store that any agent runtime can pull from. A curator process maintains the published catalog over time — pruning stale skills, flagging duplicates, archiving the dead — without ever deleting silently.
+The platform routes every submission through an automated classifier agent (auto-tags category, tags, quality, summary, duplicate candidates), a manager review queue (approve/reject with overrides), and an immutable publish pipeline. Approved skills are exposed via a public read-only REST API that any agent runtime can hit to discover and download skills. A background curator process maintains the published catalog over time — tracking usage, archiving stale entries, surfacing consolidation candidates — with hard invariants that prevent accidental data loss.
 
-The hub turns ad-hoc, scattered prompt/procedure knowledge into a governed, queryable, version-tracked library.
-
----
-
-## 2. Problem
-
-Skills today live in three bad places:
-1. Individual laptops (`~/.hermes/skills/`) — invisible to the team
-2. Random Notion/Confluence pages — not machine-readable, not versioned, not loadable by an agent
-3. Inside one-off prompts copy-pasted across projects — stale within a week
-
-Without a hub:
-- Same skill gets re-invented five times in five different shapes
-- Quality varies wildly with no review gate
-- No way to track which skills are actually used
-- Stale skills become liabilities — agents follow outdated instructions
-
-The hub solves: **single source of truth for skills + governance + lifecycle management.**
+**MVP goal:** Ship an end-to-end flow (upload → classify → approve → publish → list/download) running on local emulators within two weeks, with the architecture and invariants in place to scale into Azure without rework.
 
 ---
 
-## 3. Goals
+## 2. Mission
 
-**In scope (v1):**
-- Web UI for uploading SKILL.md bundles (single file or folder with references/templates/scripts)
-- Automated classification (category, tags, quality score) via classifier agent on every upload
-- Manager review queue with approve/reject + comments
-- Approved skills published to immutable, versioned artifact storage
-- Public read-only catalog API for agent runtimes to discover and download skills
-- Curator process for the published catalog: usage tracking, stale → archive lifecycle, duplicate detection, snapshot-before-mutate, never auto-delete
-- Audit log of all state transitions
+**Mission:** Become the single source of truth for shared, sanctioned agent skills inside the organization — governed, versioned, observable, and safe to maintain at scale.
 
-**Out of scope (v1):**
-- Skill editor in the browser (upload only; edits = new version)
-- Multi-tenant / org isolation (single org for v1)
-- Public marketplace / external publishing
-- Skill execution / sandbox testing in the hub itself
-- SSO production hardening (POC uses header-based auth stub)
-- Billing, quotas, rate limiting beyond basic abuse prevention
+**Core principles:**
+1. **Cosmos is the source of truth.** Every durable write hits Cosmos first. Redis and Blob are regenerable from Cosmos plus original upload payloads.
+2. **Cache, don't double-write.** Redis is a cache and coordination tool, never an authoritative store.
+3. **Never silently destroy.** The curator can archive, suggest, and snapshot — but never deletes. Pinning is absolute.
+4. **Classifier suggests, manager decides.** Automation accelerates review; it does not replace it.
+5. **Local-first dev loop.** The full system runs on emulators with zero Azure spend so contributors can iterate without cloud cost or credentials.
 
 ---
 
-## 4. Non-Goals
+## 3. Target Users
 
-- This is not a replacement for the Hermes per-user skills directory. Users still keep personal skills locally. The hub is for **shared, sanctioned** skills only.
-- This is not a code repository. We do not host the *outputs* skills produce — only the skill definitions themselves.
-- This is not an LLM eval platform. Quality scoring is heuristic + lightweight LLM review, not benchmark-driven.
-
----
-
-## 5. Users
-
-| Role | Description | Primary Actions |
-|------|-------------|-----------------|
-| Contributor | Anyone in the org | Upload skill, view own submissions, see rejection reasons |
-| Manager | Approves/rejects skills | Review queue, approve, reject with comments, override classifier |
-| Consumer (agent) | Hermes / other agent runtimes | Read-only API: list, search, download, report usage |
-| Admin | Hub operator | Manage users, configure curator, view audit log, run rollbacks |
+| Persona | Description | Technical Comfort | Key Needs / Pain Points |
+|---------|-------------|-------------------|-------------------------|
+| Contributor | Anyone in the org submitting a skill | Mixed (engineers, PMs, ops) | Easy upload, clear status visibility, fast feedback from classifier |
+| Manager | Approves/rejects pending skills | High | Triage queue, classifier output, override controls, no footguns |
+| Consumer (agent runtime) | Hermes or other agents pulling skills programmatically | N/A (machine) | Stable REST API, low-latency catalog, signed-URL downloads |
+| Admin | Operates the hub | Very high | Configure curator, run rollbacks, audit access, manage pins |
 
 ---
 
-## 6. User Stories
+## 4. MVP Scope
+
+### Core Functionality
+- ✅ Web UI: upload form, my-submissions view, manager review queue
+- ✅ Backend API: upload, list, get, download, usage, admin
+- ✅ Classifier agent (async, queue-backed) auto-running on every upload
+- ✅ Manager approval flow → publish bundle to Blob Storage
+- ✅ Public read-only catalog API for agent runtimes
+- ✅ Curator: usage tracking, deterministic stale/archive transitions, snapshots, rollback, pinning
+- ✅ Audit log for all state transitions
+- ✅ Versioned immutable bundle artifacts in Blob
+
+### Technical
+- ✅ Cosmos DB as system of record (skill metadata, audit, usage events)
+- ✅ Redis as cache + classifier queue + locks (TTL everywhere, AOF on the queue)
+- ✅ Azure Blob Storage for immutable bundle bytes and curator snapshots
+- ✅ Cosmos-first write discipline with Redis invalidation after success
+- ✅ Cosmos fallback on every Redis read path
+
+### Integration
+- ✅ Entra ID OIDC for humans (POC uses header stub)
+- ✅ API keys for agent runtimes
+- ✅ Bicep templates for Azure resources
+- ✅ GitHub Actions CI/CD
+
+### Deployment
+- ✅ Local dev: docker-compose with Cosmos DB emulator + Azurite + redis:7
+- ✅ Prod: Azure (Cosmos serverless, Blob LRS, Cache for Redis, Functions/App Service)
+
+### ❌ Out of Scope (v1)
+- ❌ In-browser skill editor (upload-only; edits = new version)
+- ❌ Multi-tenant / org isolation (single org)
+- ❌ Public marketplace / external publishing
+- ❌ Skill execution / sandbox testing inside the hub
+- ❌ SSO production hardening (POC uses header stub)
+- ❌ Billing, quotas, advanced rate limiting beyond basic abuse prevention
+- ❌ Replacement for per-user local skill directories (hub is for shared/sanctioned skills only)
+
+---
+
+## 5. User Stories
 
 **Contributor**
-- As a contributor, I upload a SKILL.md (drag-drop) and get an immediate auto-classification preview so I know how the system understood my skill.
-- As a contributor, I can submit additional bundle files (references/, templates/, scripts/) alongside the SKILL.md.
-- As a contributor, I see the status of my submission (pending/approved/rejected) and any manager feedback.
+- As a contributor, I want to upload a SKILL.md (drag-drop) and see an immediate auto-classification preview, so I understand how the system interpreted my skill.
+- As a contributor, I want to submit additional bundle files (`references/`, `templates/`, `scripts/`) alongside the SKILL.md, so I can ship complete skills.
+- As a contributor, I want to see the status of my submission (pending / classified / approved / rejected) and any manager feedback, so I know what to do next.
 
 **Manager**
-- As a manager, I open the review queue and see pending skills sorted by submission time, with the classifier's category/tags/quality score visible.
-- As a manager, I can view the full SKILL.md and bundle contents inline.
-- As a manager, I can approve in one click or reject with a required reason.
-- As a manager, I can override the classifier's category/tags before approving.
+- As a manager, I want to open a review queue sorted by submission time or classifier quality score, so I can triage efficiently.
+- As a manager, I want to view the rendered SKILL.md and bundle file tree inline, so I don't have to download anything to review.
+- As a manager, I want to override the classifier's category/tags before approving, so the catalog stays clean.
+- As a manager, I want to approve in one click or reject with a required reason, so contributors get actionable feedback.
 
 **Consumer (agent runtime)**
-- As an agent, I can hit `GET /v1/skills?category=devops` and get a list of approved skills with metadata.
-- As an agent, I can download a skill bundle as a tar.gz or browse files individually.
-- As an agent, I can POST a usage event when I load a skill so the curator has data to work with.
+- As an agent runtime, I want to `GET /v1/skills?category=devops`, so I can discover approved skills filtered to my needs.
+- As an agent runtime, I want to download a skill bundle as a tar.gz via a signed URL, so I avoid hitting the app tier for bytes.
+- As an agent runtime, I want to `POST /v1/skills/{id}/usage` when I load a skill, so the curator has real data to work with.
 
 **Admin**
-- As an admin, I can pause the curator, review what a curator pass *would* do (dry run), and roll back if a real pass goes wrong.
-- As an admin, I can pin a skill so the curator never touches it.
+- As an admin, I want to pause the curator and run dry-run passes, so I can review what would change before mutating anything.
+- As an admin, I want to pin a skill so the curator never touches it, regardless of usage.
+- As an admin, I want to roll back a curator pass using the most recent snapshot, so a bad pass is recoverable in minutes.
 
 ---
 
-## 7. Architecture (High Level)
+## 6. Core Architecture & Patterns
+
+### High-Level Diagram
 
 ```
 ┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
@@ -122,24 +132,37 @@ The hub solves: **single source of truth for skills + governance + lifecycle man
               └────────────────┘
 ```
 
-### Storage split (deliberate)
+### Storage Split (Final Decision — Non-negotiable)
 
-- **Cosmos DB (for NoSQL)** — system of record for all metadata: skill ID, version, status, classification, audit trail, usage counters, pinning state, pending submissions awaiting review. **All durable writes hit Cosmos first.**
-- **Redis (Azure Cache for Redis)** — read-through cache + ephemeral coordination layer. Never the only copy of anything.
-- **Blob Storage** — artifact store for approved bundles only. Each approved skill version becomes an immutable tar.gz at `published/{skill_id}/{version}/bundle.tar.gz`. Snapshots for rollback live under `snapshots/`.
+**Cosmos DB (NoSQL) — system of record. All durable writes hit Cosmos first.**
+- Skill metadata (pending → classified → approved → archived)
+- Audit log (append-only container)
+- Usage events (raw, TTL 90 days) + aggregated counters
+- Pinning state, classification, version history
 
-**Why this split:** Cosmos for query/filter/index (categories, tags, search, audit), Redis for hot-path latency + queue + locks, Blob for cheap immutable artifact hosting + CDN-frontable downloads. Single source of truth = Cosmos; Redis is regenerable from Cosmos; Blob is regenerable from Cosmos + the original upload payload.
+**Redis (Azure Cache for Redis) — cache + ephemeral coordination only. Never the only copy of anything.**
+- Hot catalog list responses (60s TTL, invalidated on publish/archive)
+- Single-skill metadata lookups (5min TTL, invalidated on update)
+- Classifier job queue (Redis LIST + BLPOP; AOF persistence enabled)
+- Rate limit counters (sliding window with TTL)
+- Web UI session tokens
+- Distributed locks for publish/curator (SET NX with TTL — prevents double-publish)
 
-### 7.1 Redis usage rules (non-negotiable)
+**Azure Blob Storage — immutable artifact bytes only.**
+- Approved bundle tar.gz files at `published/{skill_id}/{version}/bundle.tar.gz`
+- Curator snapshots at `snapshots/{utc-iso}/skills.tar.gz`
+- Archived skill bundles at `archive/{skill_id}/{version}/`
 
-Redis earns its keep as a cache and coordination tool, not a database. To prevent it from quietly becoming a second source of truth:
+**Why this split:** Cosmos handles query/filter/index (categories, tags, search, audit). Redis handles hot-path latency, queueing, and distributed locks. Blob handles cheap immutable artifact hosting with signed URLs and CDN-frontable downloads. Cosmos is the only source of truth; Redis is regenerable from Cosmos; Blob is regenerable from Cosmos plus the original upload payload.
 
-1. **Writes always hit Cosmos first.** Redis cache invalidation happens *after* the Cosmos write succeeds. Never write to Redis as the source of truth.
-2. **Cache misses are normal, not errors.** If Redis is down, the app falls back to Cosmos directly. Slower, not broken. Every Redis read path must have a Cosmos fallback.
-3. **TTL everything in Redis.** No infinite-lived keys. Worst case, cache rebuilds in N seconds.
-4. **The classifier queue is the one place Redis temporarily holds in-flight data.** Mitigation: enable Redis persistence (AOF) for the queue, and the upload handler writes the pending doc to Cosmos *before* pushing the job to the Redis queue. If a queue message is lost, the doc still exists in Cosmos with `classifier_status=pending` and a janitor sweep re-queues it.
+### Non-negotiable Redis Rules
 
-### 7.2 What lives where
+1. **Writes ALWAYS hit Cosmos first.** Redis invalidation happens *after* the Cosmos write succeeds. Never write to Redis as the source of truth.
+2. **Cache misses are normal, not errors.** Every Redis read path must have a Cosmos fallback. If Redis is down, the app is slower — not broken.
+3. **TTL everything in Redis.** No infinite-lived keys. Worst case the cache rebuilds in N seconds.
+4. **The classifier queue is the one place Redis temporarily holds in-flight data.** Mitigation: AOF persistence is enabled, the upload handler writes the pending doc to Cosmos *before* pushing to the Redis queue, and a janitor sweep re-queues lost messages by scanning Cosmos for `classifier_status=pending` docs older than a threshold.
+
+### What Lives Where
 
 | Concern | Store | Notes |
 |---------|-------|-------|
@@ -158,94 +181,227 @@ Redis earns its keep as a cache and coordination tool, not a database. To preven
 | Web UI session tokens | Redis | TTL = session lifetime |
 | Distributed locks (publish, curator) | Redis | SET NX with TTL; prevents double-publish |
 
-### Lifecycle of a skill
+### Lifecycle of a Skill
 
 ```
 upload → pending (Cosmos) → [classifier runs] → classified (Cosmos)
        → [manager reviews] → approved → [publish job] → published (Blob + Cosmos)
                           → rejected (Cosmos, terminal)
 
-published → active → stale (no usage 30d) → archived (no usage 90d, in Blob .archive/)
+published → active → stale (no usage 30d) → archived (no usage 90d, in Blob archive/)
          ↳ pinned skills bypass auto-transitions
+```
+
+### Suggested Directory Structure
+
+```
+agentic-skill-hub/
+├── backend/                # FastAPI app
+│   ├── api/                # Route modules: skills, usage, admin, auth
+│   ├── core/               # Config, deps, cosmos/redis/blob clients
+│   ├── services/           # Business logic (upload, publish, curator, audit)
+│   ├── workers/            # Classifier worker, curator worker, janitor
+│   └── tests/
+├── frontend/               # Next.js 14 + Tailwind
+│   ├── app/                # Upload, my-submissions, review queue, admin
+│   └── components/
+├── infra/                  # Bicep templates
+├── scripts/                # Dev tooling, seed data
+├── docker-compose.yml      # Cosmos emulator + Azurite + redis:7
+└── docs/
+    └── PRD.md
 ```
 
 ---
 
-## 8. Functional Requirements
+## 7. Tools / Features
 
-### 8.1 Upload
-- Accept: single SKILL.md, or .zip/.tar.gz bundle, or multi-file form upload
-- Validate: YAML frontmatter parses, required fields present (`name`, `description`), markdown body non-empty
-- Reject malformed uploads with clear error before they hit Cosmos
-- Max bundle size: 10MB v1
+### 7.1 Upload
+- Accepts: single SKILL.md, .zip/.tar.gz bundle, or multi-file form upload
+- Validates YAML frontmatter parses; required fields (`name`, `description`) present; markdown body non-empty
+- Rejects malformed uploads before they hit Cosmos
+- Max bundle size: 10MB (v1)
+- Persists the pending doc to Cosmos, then enqueues the classifier job in Redis
 
-### 8.2 Classifier Agent
-- Triggered on every successful upload (async, queue-backed)
-- Reads SKILL.md, outputs:
+### 7.2 Classifier Agent
+- Triggered on every successful upload (async via Redis queue, BLPOP worker)
+- Reads SKILL.md and outputs:
   - `category` (single, from a controlled taxonomy: devops, mlops, productivity, social-media, research, creative, …)
   - `tags` (free-form, max 8)
-  - `quality_score` (0–100, heuristic + LLM-assessed: clarity, completeness, has-trigger-conditions, has-pitfalls)
+  - `quality_score` (0–100; heuristic + LLM-assessed clarity, completeness, trigger conditions, pitfalls)
   - `summary` (one sentence)
   - `duplicate_candidates` (list of existing approved skill IDs that look similar)
 - Writes results back to the same Cosmos doc
-- Failure mode: classification timeout = doc remains pending with `classifier_status=failed`, manager sees raw doc and classifies manually
+- Failure mode: timeout → doc stays pending with `classifier_status=failed`; manager classifies manually
 
-### 8.3 Review Queue
-- Manager view: paginated list of pending skills, sortable by submission time / classifier quality score
-- Per-skill detail: rendered markdown preview, file tree for bundles, classifier output (editable), uploader info
-- Actions: approve, reject (requires reason), edit classification
-- Bulk approve gated behind a checkbox per skill (no "approve all" footgun)
+### 7.3 Review Queue
+- Paginated list of pending skills, sortable by submission time or classifier quality score
+- Per-skill detail: rendered markdown, file tree, editable classifier output, uploader info
+- Actions: approve, reject (reason required), edit classification
+- Bulk approve gated behind per-skill checkboxes (no "approve all" footgun)
 
-### 8.4 Publish
-- On approve: background job packages the bundle as immutable tar.gz, uploads to Blob at versioned path, writes blob URL + checksum into Cosmos, flips status to `approved`
-- Versioning: every approval creates a new version. Old versions remain downloadable.
-- Idempotent: re-running a publish for the same version is a no-op
+### 7.4 Publish
+- On approve: background job packages bundle as immutable tar.gz, uploads to Blob at versioned path, writes blob URL + checksum to Cosmos, flips status to `approved`
+- Versioning: every approval creates a new version; old versions remain downloadable
+- Idempotent: re-running publish for the same version is a no-op
+- Guarded by a Redis distributed lock (`SET NX` with TTL) to prevent double-publish
 
-### 8.5 Public Catalog API
-- `GET /v1/skills` — list approved skills (filterable by category, tag, status)
+### 7.5 Public Catalog API
+- `GET /v1/skills` — list approved skills (filter by category, tag, status)
 - `GET /v1/skills/{id}` — metadata for one skill
 - `GET /v1/skills/{id}/versions` — version history
 - `GET /v1/skills/{id}/download` — signed URL to bundle tar.gz
 - `POST /v1/skills/{id}/usage` — agent reports load/use event (auth required)
-- All endpoints return JSON, paginate cursor-style, include rate limit headers
+- All endpoints return JSON, paginate cursor-style, include rate-limit headers
 
-### 8.6 Curator
-- Runs on a schedule (configurable; default daily off-peak)
-- Two phases:
-  1. **Deterministic transitions** — usage-based: no loads in 30 days → stale; no loads in 90 days → archive (move blob to `archive/` prefix, flip Cosmos status)
-  2. **LLM review pass** — aux-model agent surveys active skills, proposes consolidations of near-duplicates, flags drift (e.g., references to deprecated commands), opens "curator suggestions" tickets for manager review
+### 7.6 Curator
+- Scheduled (configurable; default daily off-peak)
+- **Phase 1 — Deterministic transitions:** no loads in 30 days → `stale`; no loads in 90 days → `archived` (blob moved to `archive/` prefix; Cosmos status flipped)
+- **Phase 2 — LLM review pass:** aux-model agent surveys active skills, proposes consolidations of near-duplicates, flags drift (deprecated commands, stale references), opens "curator suggestions" tickets for manager review
 - Hard invariants:
   - **Never auto-deletes** — worst case is archival, which is recoverable
   - **Pinned skills are immune** to all auto-transitions and curator suggestions
-  - **Snapshot before every real pass** — full tar.gz of the published Blob tree, kept N (default 5)
-  - Dry-run mode produces report without any mutations
+  - **Snapshot before every real pass** — full tar.gz of published Blob tree, retain N (default 5)
+  - Dry-run mode produces a report with no mutations
 - Admin commands: `pause`, `resume`, `run --dry-run`, `run`, `rollback`, `pin`, `unpin`, `restore`
 
-### 8.7 Audit Log
-- Every state transition (upload, classify, approve, reject, publish, archive, pin, restore, rollback) writes an immutable audit record to Cosmos
+### 7.7 Audit Log
+- Every state transition (upload, classify, approve, reject, publish, archive, pin, restore, rollback) writes an immutable record to Cosmos
 - Queryable by skill ID, actor, action type, time range
-- Retention: indefinite v1
+- Retention: indefinite (v1)
 
 ---
 
-## 9. Non-Functional Requirements
+## 8. Technology Stack
 
-| Concern | Target |
-|---------|--------|
-| Upload latency | <2s for files under 1MB |
-| Classifier turnaround | <60s p95 (async, user not blocked) |
-| Catalog API latency | <300ms p95 for list/get |
-| Bundle download | served via signed URL from Blob/CDN, no app-tier proxy |
-| Availability | 99% v1 (single region, no HA) |
-| Auth | OIDC (Entra ID) for humans; API keys for agent runtimes. POC uses header stub. |
-| Audit immutability | Cosmos append-only collection, no update/delete on audit docs |
-| Backup | Cosmos continuous backup enabled; Blob snapshots before every curator pass |
+| Layer | Choice | Why |
+|-------|--------|-----|
+| Backend | **FastAPI** (Python 3.12) | Matches Hermes ecosystem, reuse skill validators, fast iteration |
+| Frontend | **Next.js 14** + Tailwind | Solid defaults, SSR fine for internal tool, easy auth |
+| Database (SoR) | **Azure Cosmos DB for NoSQL** | JSON document model + global indexing; user-specified |
+| Cache + queue | **Azure Cache for Redis** | Hot-path reads, classifier queue, rate limits, distributed locks; AOF enabled |
+| Object storage | **Azure Blob Storage** | Cheap immutable artifacts, signed URLs, CDN-frontable |
+| Background jobs | **Azure Functions** (prod), Python worker process (local dev) | Async classifier, publish, curator |
+| Classifier agent | Small aux-model subagent (Hermes-style pattern) | Consistent with org's existing agent infra |
+| Auth | **Entra ID (OIDC)** for humans, API keys for agents | Standard Azure stack; POC uses header stub |
+| Local dev | Cosmos DB emulator + Azurite + `redis:7` container | Zero Azure spend for POC |
+| Infra-as-code | **Bicep** | First-class Azure support |
+| CI/CD | GitHub Actions | Standard org tooling |
+
+### Cost Note (POC scale, monthly estimate)
+
+| Service | Tier | ~Cost |
+|---------|------|-------|
+| Cosmos DB | Serverless | ~$5–25 |
+| Blob Storage | LRS, cool tier for archive | ~$1–5 |
+| Azure Cache for Redis | Basic C0 (POC) / Standard C0 (prod) | ~$16 / ~$40 |
+| App Service / Functions | Consumption | ~$0–20 |
+| **Total** | | **< $100/mo for POC** |
+
+Redis is a rounding error. Cosmos + Blob dominate. Scale knobs are well understood.
 
 ---
 
-## 10. Data Model (Cosmos DB — NoSQL API)
+## 9. Security & Configuration
 
-### Container: `skills` (partition key: `/skill_id`)
+### Authentication / Authorization
+- **Humans:** Entra ID OIDC. POC ships a header stub (`X-User-Email`) for local dev.
+- **Agent runtimes:** API keys, issued per-runtime, revocable, rate-limited.
+- **Role enforcement:** Contributor / Manager / Admin enforced server-side on every protected endpoint.
+
+### Configuration Management
+- All secrets via environment variables (12-factor); production secrets in Azure Key Vault.
+- Required env vars (illustrative):
+  - `COSMOS_ENDPOINT`, `COSMOS_KEY`, `COSMOS_DB_NAME`
+  - `REDIS_URL`, `REDIS_PASSWORD`
+  - `BLOB_ACCOUNT_URL`, `BLOB_SAS_OR_KEY`
+  - `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`
+  - `CLASSIFIER_MODEL`, `CURATOR_MODEL`
+  - `AUTH_MODE` (`stub` | `oidc`)
+- Local dev uses `.env.local` consumed by both backend and `docker-compose.yml`.
+
+### Security In Scope (v1)
+- Pre-publish secret scan on uploaded bundles (gitleaks-style)
+- Signed-URL downloads from Blob (no app-tier proxy)
+- Audit log is append-only (no update/delete on `audit` container)
+- Rate limit counters in Redis (sliding window)
+- Manager review is the gate for any bundle going public
+
+### Security Out of Scope (v1)
+- Bundle sandboxing / execution
+- Per-org isolation
+- Advanced abuse detection / WAF tuning
+- Production SSO hardening beyond Entra ID baseline
+
+### Deployment Considerations
+- Single region for v1 (99% availability target). Multi-region is a post-MVP concern.
+- Cosmos continuous backup enabled.
+- Blob snapshots taken before every curator pass.
+- Bicep templates land in `infra/` and are deployed via GitHub Actions.
+
+---
+
+## 10. API Specification
+
+All endpoints return JSON, paginate cursor-style, and include rate-limit headers (`X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`).
+
+### Public Catalog (auth: API key for agents, OIDC for humans)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET`  | `/v1/skills` | List approved skills. Query: `category`, `tag`, `status`, `cursor`, `limit` |
+| `GET`  | `/v1/skills/{id}` | Metadata for one skill (latest approved version) |
+| `GET`  | `/v1/skills/{id}/versions` | Version history |
+| `GET`  | `/v1/skills/{id}/download` | Returns signed URL to bundle tar.gz |
+| `POST` | `/v1/skills/{id}/usage` | Agent reports load/use event |
+
+### Contributor / Manager (auth: OIDC)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/v1/uploads` | Upload SKILL.md or bundle. Returns pending skill doc |
+| `GET`  | `/v1/me/submissions` | List caller's submissions |
+| `GET`  | `/v1/admin/queue` | Manager: pending review queue |
+| `POST` | `/v1/admin/skills/{id}/approve` | Manager: approve (triggers publish) |
+| `POST` | `/v1/admin/skills/{id}/reject` | Manager: reject (reason required) |
+| `PATCH`| `/v1/admin/skills/{id}/classification` | Manager: override classifier output |
+
+### Admin (auth: OIDC, admin role)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/v1/admin/curator/run` | Run curator (supports `?dry_run=true`) |
+| `POST` | `/v1/admin/curator/pause` | Pause curator schedule |
+| `POST` | `/v1/admin/curator/rollback` | Roll back to a snapshot |
+| `POST` | `/v1/admin/skills/{id}/pin` | Pin a skill (immune to curator) |
+| `POST` | `/v1/admin/skills/{id}/unpin` | Unpin |
+| `POST` | `/v1/admin/skills/{id}/restore` | Restore an archived skill |
+| `GET`  | `/v1/admin/audit` | Query audit log |
+
+### Example: Upload Response
+
+```json
+{
+  "skill_id": "github-pr-workflow",
+  "version": "1.0.0",
+  "status": "pending",
+  "uploaded_at": "2026-05-16T12:34:56Z",
+  "classifier_status": "queued"
+}
+```
+
+### Example: Usage Event Payload
+
+```json
+{
+  "loader_id": "hermes-runtime-42",
+  "context": { "session_id": "abc123", "platform": "macos" }
+}
+```
+
+### Data Model — Cosmos Containers
+
+#### Container: `skills` (partition key: `/skill_id`)
 ```json
 {
   "id": "uuid",
@@ -283,7 +439,7 @@ published → active → stale (no usage 30d) → archived (no usage 90d, in Blo
 }
 ```
 
-### Container: `audit` (partition key: `/skill_id`)
+#### Container: `audit` (partition key: `/skill_id`)
 ```json
 {
   "id": "uuid",
@@ -297,7 +453,7 @@ published → active → stale (no usage 30d) → archived (no usage 90d, in Blo
 }
 ```
 
-### Container: `usage_events` (partition key: `/skill_id`, TTL: 90 days)
+#### Container: `usage_events` (partition key: `/skill_id`, TTL: 90 days)
 ```json
 {
   "id": "uuid",
@@ -311,96 +467,159 @@ published → active → stale (no usage 30d) → archived (no usage 90d, in Blo
 
 ---
 
-## 11. Tech Stack
+## 11. Success Criteria
 
-| Layer | Choice | Why |
-|-------|--------|-----|
-| Backend | FastAPI (Python 3.12) | Matches Hermes ecosystem, reuse skill validators, fast iteration |
-| Frontend | Next.js 14 + Tailwind | Solid defaults, SSR for SEO-free internal tool is fine, easy auth |
-| Database (SoR) | Azure Cosmos DB for NoSQL | User-specified, fits JSON document model + global indexing |
-| Cache + queue | Azure Cache for Redis | Hot-path reads, classifier queue, rate limits, distributed locks. AOF persistence enabled. |
-| Object Storage | Azure Blob Storage | Cheap immutable artifacts, signed URLs, CDN-frontable |
-| Background jobs | Azure Functions (prod), Python worker process (local dev) | Async classifier + publish + curator |
-| Classifier agent | Reuses Hermes subagent pattern (small aux model) | Consistent with org's existing agent infra |
-| Auth | Entra ID (OIDC) for humans, API keys for agents | Standard Azure stack |
-| Local dev | Cosmos DB emulator + Azurite + redis:7 container | Zero Azure spend for POC |
-| Infra-as-code | Bicep (Azure native) | First-class Azure support |
+### MVP Success Definition
+The MVP is successful when a contributor can upload a SKILL.md on a local dev stack, see it auto-classified within 60 seconds, have a manager approve it, and have an agent runtime list and download it via the public API — all without touching Azure.
 
-### Cost note (POC scale, monthly estimate)
+### Functional Requirements
+- ✅ Upload → pending doc in Cosmos within 2s for files <1MB
+- ✅ Classifier runs async and writes results back to Cosmos within 60s p95
+- ✅ Manager review queue shows pending skills with classifier output
+- ✅ Approve creates immutable tar.gz in Blob with checksum
+- ✅ Public catalog API returns approved skills with <300ms p95 latency
+- ✅ Usage events accumulate per-skill and TTL after 90 days
+- ✅ Curator dry-run produces report without mutations
+- ✅ Snapshot + rollback round-trip works
+- ✅ Pinned skills are skipped by every curator transition
+- ✅ Audit log captures every state transition
 
-| Service | Tier | ~Cost |
-|---------|------|-------|
-| Cosmos DB | Serverless | ~$5–25 (pay per RU, low for internal tool) |
-| Blob Storage | LRS, cool tier for archive | ~$1–5 |
-| Azure Cache for Redis | Basic C0 (POC) / Standard C0 (prod) | ~$16 / ~$40 |
-| App Service / Functions | Consumption | ~$0–20 |
-| **Total** | | **<$100/mo for POC** |
+### Quality Indicators
+- Time-from-upload to-approval: **<48h p50**
+- Classifier accuracy: **manager-override rate <30%**
+- Zero accidental deletions (hard invariant — measured, not goaled)
+- Cache hit rate on `/v1/skills` list endpoint: >80% steady-state
+- Janitor re-queue rate (lost classifier jobs): <1% of uploads
 
-Redis is rounding error. Cosmos + Blob dominate. Scale knobs are well understood.
-
----
-
-## 12. Milestones
-
-### M0 — POC (target: 2 weeks)
-- Repo scaffolded, ARCHITECTURE.md + this PRD committed
-- Backend: upload → Cosmos pending → classifier runs → status updates
-- Frontend: upload form + my-submissions view + manager review queue
-- Approve flow: writes tar.gz to Azurite, flips status
-- Public list/download API
-- Runs entirely on local emulators (Cosmos + Azurite), no Azure spend
-
-### M1 — Azure deployment + auth (target: +2 weeks)
-- Bicep templates for Cosmos, Blob, Functions, App Service
-- Entra ID OIDC integration
-- API key issuance for agent runtimes
-- CI/CD via GitHub Actions
-
-### M2 — Curator (target: +2 weeks)
-- Usage tracking pipeline (POST /usage → counters → 30d rolling)
-- Deterministic stale/archive transitions on schedule
-- Snapshot + rollback
-- Pinning + admin commands
-
-### M3 — Curator LLM review (target: +1 week)
-- Aux-model review pass with consolidation suggestions
-- Suggestions surface in manager UI as actionable items
-
-### M4 — Hardening (ongoing)
-- Rate limiting, abuse prevention, observability (App Insights), runbooks
+### User Experience Goals
+- Contributors get same-day feedback on submissions
+- Managers can clear a 20-skill queue in under 30 minutes
+- Agent runtimes can integrate with the catalog API in a single afternoon
 
 ---
 
-## 13. Open Questions
+## 12. Implementation Phases
 
-1. **Skill taxonomy** — do we adopt the Hermes categories as-is (devops, mlops, productivity, …) or design a custom one for the org? *Default: Hermes categories.*
-2. **Versioning semantics** — semver enforced, or freeform string? Auto-bump on every approval, or contributor-declared? *Default: semver, auto-bump patch on each approval unless contributor specifies.*
-3. **Per-skill ownership** — should only the original uploader (or designated owners) be allowed to submit new versions of an existing skill? *Default: yes, with admin override.*
-4. **Duplicate handling** — when classifier flags duplicates, hard-block or just warn? *Default: warn, manager decides.*
-5. **Public vs private skills** — do we need a private/draft state visible only to uploader before submitting for review? *Default: no in v1; can save draft client-side.*
-6. **Skill testing** — any automated checks beyond schema validation (e.g., does the skill reference tools that exist, are commands syntactically valid)? *Default: schema only in v1; deeper validation later.*
-7. **Curator LLM cost** — what's the budget for the review pass? Cap at N skills per run? *Default: cap at 50 skills per run, manager-configurable.*
+### Phase M0 — POC (target: 2 weeks)
+**Goal:** Prove the end-to-end flow on local emulators with zero Azure spend.
+
+**Deliverables:**
+- ✅ Repo scaffolded; ARCHITECTURE.md + this PRD committed
+- ✅ docker-compose: Cosmos emulator + Azurite + redis:7
+- ✅ Backend: upload → Cosmos pending → classifier worker (BLPOP) → status updates
+- ✅ Frontend: upload form, my-submissions view, manager review queue
+- ✅ Approve flow: writes tar.gz to Azurite, flips Cosmos status
+- ✅ Public list/get/download API
+- ✅ Basic audit log on every transition
+
+**Validation:** End-to-end happy path (upload → classify → approve → list → download) demoable locally; no Azure resources provisioned.
+
+### Phase M1 — Azure deployment + auth (target: +2 weeks)
+**Goal:** Get the POC running in Azure with real authentication.
+
+**Deliverables:**
+- ✅ Bicep templates for Cosmos, Blob, Redis, Functions, App Service
+- ✅ Entra ID OIDC integration (replaces header stub)
+- ✅ API key issuance + rotation for agent runtimes
+- ✅ GitHub Actions CI/CD (build, test, deploy)
+- ✅ App Insights wiring (logs + traces)
+
+**Validation:** A real user authenticates via Entra ID, uploads a skill in the deployed environment, and a real agent runtime downloads it using an API key.
+
+### Phase M2 — Curator (target: +2 weeks)
+**Goal:** Ship the lifecycle maintenance layer.
+
+**Deliverables:**
+- ✅ Usage tracking pipeline (POST /usage → counters → 30d rolling window)
+- ✅ Deterministic stale (30d) / archive (90d) transitions on schedule
+- ✅ Snapshot-before-pass + rollback CLI
+- ✅ Pinning + unpinning
+- ✅ Admin endpoints: `pause`, `resume`, `run --dry-run`, `run`, `rollback`, `restore`
+- ✅ Janitor sweep for lost classifier queue messages
+
+**Validation:** Dry-run report matches real-run diff; rollback restores prior state byte-for-byte; pinned skills survive a full curator cycle untouched.
+
+### Phase M3 — Curator LLM review (target: +1 week)
+**Goal:** Add the consolidation/drift suggestions layer.
+
+**Deliverables:**
+- ✅ Aux-model review pass on active skills
+- ✅ Consolidation suggestions surfaced in manager UI as actionable tickets
+- ✅ Per-run skill cap (default 50, manager-configurable)
+
+**Validation:** Manager receives 3+ actionable suggestions per run on a seeded duplicate corpus; suggestions are reviewable, dismissible, or actionable.
+
+### Phase M4 — Hardening (ongoing)
+**Goal:** Production-readiness.
+
+**Deliverables:**
+- ✅ Rate limiting on all public endpoints
+- ✅ Pre-publish secret scan (gitleaks-style) integrated into publish job
+- ✅ Observability runbooks
+- ✅ Backup + restore drills
+- ✅ Capacity planning doc
+
+**Validation:** Synthetic load test passes SLOs; runbook dry-run completes end-to-end.
 
 ---
 
-## 14. Risks
+## 13. Future Considerations
+
+- **In-browser skill editor.** Edit + diff against latest version, draft state.
+- **Multi-tenant / org isolation.** Per-org namespaces, RBAC, quotas.
+- **Public marketplace.** External publishing of selected skills.
+- **Sandbox testing.** Run a skill against synthetic inputs to validate behavior before approval.
+- **Trusted-uploader auto-approve.** Reputation-based bypass for the review queue.
+- **Per-skill semantic search.** Vector index over SKILL.md bodies for better discovery.
+- **Federation.** Multiple hubs that sync approved catalogs.
+- **Skill telemetry dashboards.** Per-skill health, error rates, drift indicators.
+- **CDN-fronted downloads** in production for global agent runtimes.
+
+---
+
+## 14. Risks & Mitigations
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
-| Classifier mis-categorizes at scale | Medium | Low | Manager can override; classifier output is suggestion not authority |
-| Curator archives a skill someone needed | Low | Medium | 30/90 day grace, pinning, snapshot+rollback, never auto-deletes |
-| Cosmos costs balloon with usage events | Medium | Medium | TTL on usage_events container (90d), aggregate counters live on skill doc |
-| Manager review becomes bottleneck | High | Medium | Quality score sorting, bulk-approve UI, eventually trusted-uploader auto-approve |
-| Storage account becomes single point of failure | Low | High | GRS replication, snapshots, Cosmos is system of record so Blob is regenerable |
-| Skill bundle contains secrets / malicious payloads | Medium | High | Pre-publish scan (gitleaks-style), manager review is the gate, never auto-execute |
+| Classifier mis-categorizes at scale | Medium | Low | Manager can override; classifier output is a suggestion, not authority |
+| Curator archives a skill someone needed | Low | Medium | 30/90-day grace; pinning; snapshot + rollback; never auto-deletes |
+| Cosmos costs balloon with usage events | Medium | Medium | TTL on `usage_events` (90d); aggregated counters live on the skill doc |
+| Manager review becomes a bottleneck | High | Medium | Quality-score sorting, bulk-approve UI, eventual trusted-uploader auto-approve |
+| Storage account is a single point of failure | Low | High | GRS replication, snapshots; Cosmos is SoR so Blob is regenerable |
+| Skill bundle contains secrets / malicious payloads | Medium | High | Pre-publish scan, manager review gate, never auto-execute |
+| Redis outage degrades the app | Medium | Low | Every Redis read path has a Cosmos fallback (rule #2); slower, not broken |
+| Lost classifier queue message | Low | Low | Pending doc written to Cosmos before enqueue; janitor sweep re-queues |
 
 ---
 
-## 15. Success Metrics
+## 15. Open Questions
 
-- Skills published in first 90 days
-- % of org running agent runtimes that pull from the hub at least weekly
-- Time-from-upload to-approval (target: <48h p50)
-- Classifier accuracy (manager-override rate, target <30%)
-- Skills archived by curator vs restored (high restore rate = curator too aggressive)
-- Zero accidental deletions (hard invariant — measured, not goaled)
+These are preserved for Michael to answer before or during M0.
+
+1. **Skill taxonomy** — adopt Hermes categories (devops, mlops, productivity, …) as-is, or design a custom one for the org? *Default: Hermes categories.*
+2. **Versioning semantics** — semver enforced, or freeform string? Auto-bump on every approval, or contributor-declared? *Default: semver, auto-bump patch on each approval unless contributor specifies.*
+3. **Per-skill ownership** — should only the original uploader (or designated owners) be allowed to submit new versions? *Default: yes, with admin override.*
+4. **Duplicate handling** — when classifier flags duplicates, hard-block or warn-only? *Default: warn, manager decides.*
+5. **Draft state** — do we need a private/draft state visible only to uploader before submission? *Default: no in v1; save draft client-side.*
+6. **Skill checks** — beyond schema validation, any automated checks (referenced tools exist, commands syntactically valid)? *Default: schema only in v1; deeper validation later.*
+7. **Curator LLM budget** — cap N skills per review run? *Default: cap at 50 per run, manager-configurable.*
+
+---
+
+## 16. Appendix
+
+### Related Documents
+- `.opencode/CONTEXT.md` — full requirements conversation between Michael Liav and Hermes
+- `README.md` — short project overview
+- `infra/` — Bicep templates (forthcoming, M1)
+
+### Key Dependencies
+- [FastAPI](https://fastapi.tiangolo.com/)
+- [Next.js 14](https://nextjs.org/)
+- [Azure Cosmos DB for NoSQL](https://learn.microsoft.com/azure/cosmos-db/nosql/)
+- [Azure Cache for Redis](https://learn.microsoft.com/azure/azure-cache-for-redis/)
+- [Azure Blob Storage](https://learn.microsoft.com/azure/storage/blobs/)
+- [Azure Functions](https://learn.microsoft.com/azure/azure-functions/)
+- [Bicep](https://learn.microsoft.com/azure/azure-resource-manager/bicep/)
+- [Azurite (Blob emulator)](https://learn.microsoft.com/azure/storage/common/storage-use-azurite)
+- [Cosmos DB Emulator](https://learn.microsoft.com/azure/cosmos-db/local-emulator)

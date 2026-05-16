@@ -1,0 +1,2 @@
+bash: stdbuf: command not found
+EXIT=127
