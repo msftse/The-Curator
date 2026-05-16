@@ -41,7 +41,7 @@ async def process_one(
     redis,
     settings,
 ) -> None:
-    classifier = make_classifier(settings.classifier_provider)
+    classifier = make_classifier(settings.classifier_provider, settings=settings)
     db = cosmos_client.get_database_client(settings.cosmos_db_name)
     skills = get_container(db, SKILLS_CONTAINER)
     audit = get_container(db, AUDIT_CONTAINER)
@@ -59,7 +59,7 @@ async def process_one(
     doc = SkillDoc.model_validate(raw)
     before = {"status": doc.status, "classifier_status": doc.classifier_status}
     try:
-        result = classifier.classify(doc.skill_md_text)
+        result = await classifier.classify(doc.skill_md_text)
         result.classified_at = datetime.now(UTC)
         doc.classification = result
         doc.classifier_status = "done"

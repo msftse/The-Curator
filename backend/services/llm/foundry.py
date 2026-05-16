@@ -36,9 +36,7 @@ class FoundryLLMProvider(LLMProvider):
             from azure.ai.inference.aio import ChatCompletionsClient
             from azure.core.credentials import AzureKeyCredential
         except Exception as exc:  # pragma: no cover — import guard
-            raise LLMProviderError(
-                f"azure-ai-inference SDK is not installed: {exc}"
-            ) from exc
+            raise LLMProviderError(f"azure-ai-inference SDK is not installed: {exc}") from exc
 
         if not self._settings.foundry_endpoint:
             raise LLMProviderError("FOUNDRY_ENDPOINT is not configured")
@@ -49,9 +47,7 @@ class FoundryLLMProvider(LLMProvider):
             try:
                 from azure.identity.aio import DefaultAzureCredential
             except Exception as exc:  # pragma: no cover
-                raise LLMProviderError(
-                    f"azure-identity is not installed: {exc}"
-                ) from exc
+                raise LLMProviderError(f"azure-identity is not installed: {exc}") from exc
             credential = DefaultAzureCredential()
 
         return ChatCompletionsClient(
@@ -86,19 +82,23 @@ class FoundryLLMProvider(LLMProvider):
         except Exception as exc:  # pragma: no cover
             raise LLMProviderError(f"azure-ai-inference models missing: {exc}") from exc
 
+        # Some deployments reject ``response_format={"type":"json_object"}`` with
+        # HTTP 400. Gate the kwarg behind a settings flag; when off, we rely on
+        # the system prompt + lenient JSON parsing in the caller.
+        kwargs: dict[str, Any] = {
+            "messages": [
+                SystemMessage(content=system),
+                UserMessage(content=truncated_user),
+            ],
+            "max_tokens": max_output_tokens,
+            "temperature": temperature,
+            "model": self._settings.foundry_deployment,
+        }
+        if response_format == "json_object" and self._settings.foundry_supports_json_object:
+            kwargs["response_format"] = {"type": "json_object"}
+
         try:
-            resp = await self._client.complete(
-                messages=[
-                    SystemMessage(content=system),
-                    UserMessage(content=truncated_user),
-                ],
-                max_tokens=max_output_tokens,
-                temperature=temperature,
-                model=self._settings.foundry_deployment,
-                response_format=(
-                    {"type": "json_object"} if response_format == "json_object" else None
-                ),
-            )
+            resp = await self._client.complete(**kwargs)
         except Exception as exc:  # noqa: BLE001
             raise LLMProviderError(f"Foundry completion failed: {exc}") from exc
 
