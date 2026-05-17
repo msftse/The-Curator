@@ -3,15 +3,16 @@ PY := python
 UVICORN := uvicorn
 PNPM := pnpm
 
-.PHONY: help up down api worker curator web seed wait test test-unit test-integration lint format typecheck demo curator-run curator-dry-run curator-status janitor
+.PHONY: help up down api worker curator web dev seed wait test test-unit test-integration lint format typecheck demo curator-run curator-dry-run curator-status janitor
 
 help:
 	@echo "Common targets:"
 	@echo "  make up                 # docker compose up -d (Cosmos + Azurite + Redis)"
 	@echo "  make down               # docker compose down"
 	@echo "  make wait               # block until emulators are reachable"
-	@echo "  make api                # run FastAPI dev server"
-	@echo "  make worker             # run classifier worker"
+	@echo "  make api                # run FastAPI dev server (foreground)"
+	@echo "  make worker             # run classifier worker (foreground)"
+	@echo "  make dev                # api + worker together, single Ctrl-C kills both"
 	@echo "  make web                # run Next.js dev server"
 	@echo "  make seed               # seed sample skills"
 	@echo "  make test-unit          # pytest unit tests (no docker required)"
@@ -46,6 +47,28 @@ api:
 
 worker:
 	$(PY) -m backend.workers.classifier
+
+# Run api + classifier worker together. The worker is a separate process
+# (uvicorn --reload doesn't restart it), so without this target it's easy
+# to ship code changes that the worker silently ignores until you remember
+# to restart it. See .agents/GAPS.md gap #6.
+#
+# Worker stdout/stderr goes to /tmp/skillhub-worker.log (tail it for
+# foundry.llm.* and classify_* events). A single Ctrl-C kills both procs.
+dev:
+	@if lsof -nP -iTCP:8000 -sTCP:LISTEN >/dev/null 2>&1; then \
+		echo "port 8000 already in use:"; \
+		lsof -nP -iTCP:8000 -sTCP:LISTEN; \
+		echo "kill the existing listener first (e.g. \`lsof -ti:8000 | xargs kill\`)"; \
+		exit 1; \
+	fi
+	@echo "[dev] starting classifier worker → /tmp/skillhub-worker.log"
+	@$(PY) -m backend.workers.classifier > /tmp/skillhub-worker.log 2>&1 & \
+		WORKER_PID=$$!; \
+		trap "echo; echo '[dev] stopping worker (PID '$$WORKER_PID')'; kill $$WORKER_PID 2>/dev/null || true; wait $$WORKER_PID 2>/dev/null || true" EXIT INT TERM; \
+		echo "[dev] worker PID $$WORKER_PID"; \
+		echo "[dev] starting api on :8000 (Ctrl-C stops both)"; \
+		$(UVICORN) backend.app:create_app --factory --reload --host 0.0.0.0 --port 8000
 
 curator:
 	$(PY) -m backend.workers.curator_scheduler

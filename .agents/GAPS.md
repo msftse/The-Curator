@@ -33,12 +33,21 @@ them via its own UAMI in prod.
 
 ---
 
-## 2. Token accounting from MAF returns zero
+## 2. Token accounting from MAF returns zero  ✅ DONE
 
-**File:** `backend/services/llm/foundry.py` (around the `get_response` call).
-**Symptom:** `usage_details.input_token_count` and `output_token_count` both come back as `0` from `agent-framework-foundry==1.4.0`. Logs show `foundry.llm.response tokens_in=0 tokens_out=0` on every call even when text is correctly returned.
-**Impact:** Non-blocking — classifier works end-to-end. But it kills any future "cost per classify" telemetry and any quota dashboards.
-**Next step:** Open an issue against the `agent-framework` repo or check if the beta exposes usage under a different attribute (e.g. `response.raw.usage`). If MAF can't surface it, fall back to manually counting tokens with `tiktoken` against the rendered prompt + response.
+**Root cause:** Two unrelated MAF API mismatches in
+`backend/services/llm/foundry.py`:
+
+1. `agent_framework._types.UsageDetails` is a `TypedDict` (runtime `dict`),
+   so `getattr(usage, "input_token_count", 0)` always returned the default.
+   Switched to `usage.get("input_token_count") or 0` (same for output).
+2. `ChatResponse` exposes `.model`, not `.model_id`. The previous code
+   silently fell back to `self._settings.foundry_deployment` because the
+   attribute was missing.
+
+Both fixes are covered by `backend/tests/unit/test_foundry_llm_provider.py`
+(5 tests, all passing), including a regression test pinning the TypedDict
+`.get(...)` access path.
 
 ---
 
@@ -78,11 +87,16 @@ that transitive — `uv tree` confirms there's no other ancestor.
 
 ---
 
-## 6. Classifier worker is not managed by `make`
+## 6. Classifier worker is not managed by `make`  ✅ DONE
 
-**Symptom:** This session we ran the worker as `nohup uv run python -m backend.workers.classifier > /tmp/classifier.log 2>&1 &`. There's no `make worker` / `make dev` target that brings up the worker alongside uvicorn, and `uvicorn --reload` does not restart it on code changes.
-**Fix shape:** Add a `make worker` target and/or wire `honcho` / `foreman` (Procfile) to bring `api` + `worker` + (optional) `curator_scheduler` up together with one command. Document in README's local-dev section.
-**Why it bit us:** Code changes to `backend/services/classifier_stub.py` looked like they weren't taking effect — the worker had cached the old StubClassifier because we never restarted it.
+Added `make dev` target that brings up `uvicorn` + the classifier worker
+together. Worker is backgrounded to `/tmp/skillhub-worker.log`; uvicorn
+runs in the foreground. A shell trap kills the worker on Ctrl-C so we
+don't leak stale workers between sessions (the original symptom — cached
+StubClassifier across code edits — should no longer recur).
+
+`make worker` still exists for the rare "worker only" loop. README's
+local-dev section unchanged: `make dev` is the recommended entrypoint.
 
 ---
 
@@ -103,7 +117,7 @@ that transitive — `uv tree` confirms there's no other ancestor.
 
 - **Curator UI**: PRD §11 + plan `m2.2-frontend-curator-ui.md` is the next functional milestone if no fires.
 - **AKS deployment** plan `m4-aks-deployment.md` is staged but not started; depends on M3 being stable.
-- **Pre-commit hooks**: AGENTS.md §10 calls for `.pre-commit-config.yaml`; not present yet. Ruff + the never-delete gate would be the obvious first hooks.
+- **Pre-commit hooks**: ✅ DONE. `.pre-commit-config.yaml` now runs trailing-whitespace / EOF / yaml / large-files / private-key / merge-conflict checks, plus `ruff` (lint) + `ruff format`, plus a local `never-delete-invariant` hook that runs the AST gate test on any `backend/**.py` change. `ruff-pre-commit` pinned to `v0.15.13` to match the project's installed ruff (the older `v0.5.7` produced spurious reformats on first run). Helm template YAML is excluded from `check-yaml` because `{{ … }}` placeholders aren't valid YAML.
 - **Token observability**: blocked on gap #2 resolution.
 
 ---

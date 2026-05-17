@@ -7,13 +7,20 @@ repos:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
+        # Helm templates contain `{{ ... }}` placeholders that are not valid
+        # YAML on their own. They're rendered by `helm template` in CI.
+        exclude: ^charts/.*/templates/.*\.yaml$
       - id: check-added-large-files
         args: ["--maxkb=1024"]
       - id: detect-private-key
       - id: check-merge-conflict
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.5.7
+    # Keep in sync with pyproject.toml's `ruff>=0.5` dev dependency. Pinning
+    # avoids the version skew where pre-commit's ruff (v0.5) reformats files
+    # that the project's installed ruff (>=0.15) considers fine, and vice
+    # versa. Bump in lockstep with `uv lock` updates.
+    rev: v0.15.13
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -29,3 +36,15 @@ repos:
         files: ^frontend/.*\.(ts|tsx)$
         pass_filenames: false
         stages: [pre-push]  # skip on commit; only run on push
+
+      # Enforce AGENTS.md §5 (never-delete) before code lands. The AST gate
+      # is scope-aware: delete_blob is allowed only inside
+      # `move_published_to_archive` in backend/services/curator.py; everywhere
+      # else, delete_blob and delete_item are hard failures. Running it as a
+      # commit hook stops a footgun PR from reaching CI.
+      - id: never-delete-invariant
+        name: AGENTS.md §5 — never-delete AST gate
+        entry: uv run pytest backend/tests/unit/test_never_delete_invariant.py -q
+        language: system
+        files: ^backend/.*\.py$
+        pass_filenames: false

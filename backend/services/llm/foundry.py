@@ -63,9 +63,7 @@ class FoundryLLMProvider(LLMProvider):
             try:
                 from agent_framework.foundry import FoundryChatClient
             except Exception as exc:  # pragma: no cover — import guard
-                raise LLMProviderError(
-                    f"agent-framework-foundry is not installed: {exc}"
-                ) from exc
+                raise LLMProviderError(f"agent-framework-foundry is not installed: {exc}") from exc
 
             if not self._settings.azure_ai_project_endpoint:
                 raise LLMProviderError(
@@ -87,7 +85,9 @@ class FoundryLLMProvider(LLMProvider):
                 "foundry.llm.client_built project_endpoint=%s model=%s auth=%s",
                 self._settings.azure_ai_project_endpoint,
                 self._settings.foundry_deployment,
-                "api_key" if self._settings.azure_ai_foundry_api_key else "default_azure_credential",
+                "api_key"
+                if self._settings.azure_ai_foundry_api_key
+                else "default_azure_credential",
             )
             return self._client
 
@@ -99,9 +99,7 @@ class FoundryLLMProvider(LLMProvider):
             try:
                 from azure.core.credentials import AzureKeyCredential
             except Exception as exc:  # pragma: no cover
-                raise LLMProviderError(
-                    f"azure-core not installed: {exc}"
-                ) from exc
+                raise LLMProviderError(f"azure-core not installed: {exc}") from exc
             return AzureKeyCredential(self._settings.azure_ai_foundry_api_key)
         try:
             from azure.identity.aio import DefaultAzureCredential
@@ -171,16 +169,22 @@ class FoundryLLMProvider(LLMProvider):
         try:
             response = await client.get_response(messages, options=options)
         except Exception as exc:  # noqa: BLE001
-            log.exception(
-                "foundry.llm.error model=%s", self._settings.foundry_deployment
-            )
+            log.exception("foundry.llm.error model=%s", self._settings.foundry_deployment)
             raise LLMProviderError(f"Foundry completion failed: {exc}") from exc
 
         text = (response.text or "").strip()
-        usage = getattr(response, "usage_details", None)
-        input_tokens = int(getattr(usage, "input_token_count", 0) or 0)
-        output_tokens = int(getattr(usage, "output_token_count", 0) or 0)
-        model_id = getattr(response, "model_id", None) or self._settings.foundry_deployment
+        # `UsageDetails` is a TypedDict at runtime — a plain `dict`. `getattr`
+        # never sees its keys, so the previous `getattr(usage, "input_token_count")`
+        # always returned 0. Read via dict access. (.get returns None when MAF
+        # decided not to surface usage at all — coerce to 0 for the LLMResult
+        # int contract.)
+        usage = getattr(response, "usage_details", None) or {}
+        input_tokens = int(usage.get("input_token_count") or 0)
+        output_tokens = int(usage.get("output_token_count") or 0)
+        # MAF's `ChatResponse.model` is the served model id (not `model_id` —
+        # that attribute does not exist). Falls back to our deployment name
+        # if the provider didn't echo a model.
+        model_id = getattr(response, "model", None) or self._settings.foundry_deployment
 
         log.info(
             "foundry.llm.response model=%s input_tokens=%d output_tokens=%d "
