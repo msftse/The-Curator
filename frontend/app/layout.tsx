@@ -95,17 +95,15 @@ export default function RootLayout({
 }
 
 function BrandMark() {
-  // Microsoft four-square mark, official MS colors.
+  // The Curator mark — same image as the favicon (app/icon.png), surfaced
+  // here via /public so we can use a plain <img> without next/image config.
   return (
-    <span
+    <img
+      src="/brand-icon.png"
+      alt=""
       aria-hidden
-      className="inline-grid h-9 w-9 grid-cols-2 gap-[3px] rounded-md p-0.5"
-    >
-      <span className="block rounded-[2px] bg-ms-red" />
-      <span className="block rounded-[2px] bg-ms-green" />
-      <span className="block rounded-[2px] bg-ms-blue" />
-      <span className="block rounded-[2px] bg-ms-yellow" />
-    </span>
+      className="h-11 w-11 object-contain"
+    />
   );
 }
 
@@ -119,12 +117,12 @@ function Footer() {
       <div className="mx-auto grid max-w-[1280px] grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
         <div>
           <div className="mb-3 flex items-center gap-3">
-            <span className="inline-grid h-10 w-10 grid-cols-2 gap-[3px] rounded-md p-0.5">
-              <span className="block rounded-[2px] bg-ms-red" />
-              <span className="block rounded-[2px] bg-ms-green" />
-              <span className="block rounded-[2px] bg-ms-blue" />
-              <span className="block rounded-[2px] bg-ms-yellow" />
-            </span>
+            <img
+              src="/brand-icon.png"
+              alt=""
+              aria-hidden
+              className="h-12 w-12 object-contain"
+            />
             <div>
               <strong className="font-display text-cream">The Curator</strong>
               <div className="text-xs text-cream-dim">
