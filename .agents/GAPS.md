@@ -5,17 +5,31 @@ See session transcript for full context. AGENTS.md / docs/PRD.md are still the a
 
 ---
 
-## 1. Never-delete AST gate is not scope-aware  (highest priority)
+## 1. Never-delete AST gate is not scope-aware  ✅ DONE
 
-**File:** `backend/tests/unit/test_never_delete_invariant.py`
-**Symptom:** 1 failing unit test — `test_no_forbidden_delete_calls[backend/services/curator.py]` flags `await src.delete_blob()` at `backend/services/curator.py:215`.
-**Why it's wrong:** AGENTS.md §5 explicitly allows that single callsite because it lives inside `move_published_to_archive` (def at line 163), and the precondition `await dest.exists()` guards it. The test currently does a flat AST walk and doesn't know about enclosing-function scope.
-**Fix shape:**
-- Walk the AST with parent tracking (or `ast.walk` + a function-scope map).
-- Allow `delete_blob` *only* when the nearest enclosing `FunctionDef`/`AsyncFunctionDef` is `move_published_to_archive` **and** the file is `backend/services/curator.py`.
-- Everywhere else (and all `delete_item` calls everywhere): still a hard fail.
-- Add a regression test: a synthetic file with `delete_blob` outside that function must fail the gate.
-**Verify:** `uv run pytest backend/tests/unit/test_never_delete_invariant.py -v` → all pass; full unit suite back to 181/181.
+Resolved in commit `900581a`. The gate now walks AST with parent tracking and
+allows `delete_blob` only inside `move_published_to_archive` in
+`backend/services/curator.py`. All 20 invariant tests pass; full unit suite at
+182/182.
+
+---
+
+## 1a. Curator dashboard "Failed to load recent runs"  ✅ DONE
+
+**Root cause:** Backend principal lacks `Storage Blob Data Reader` on
+`stskillhubdeveastus2`, so `list_blobs(name_starts_with="runs/")` returns
+`AuthorizationFailure`. The endpoint propagated the raw `HttpResponseError`
+as an unhandled 500, which strips CORS headers — browser surfaces it as
+`TypeError: Failed to fetch`.
+**Fix:** Wrap the listing iteration in try/except and return `[]` on
+failure (matches the status endpoint's existing pattern for `last_run`).
+The UI now correctly renders "No prior runs." Logs the underlying error
+as `curator.list_runs.list_failed` for ops to chase.
+**Still TODO operationally (not code):** Grant the backend's principal
+`Storage Blob Data Reader` (or `Contributor`) on the storage account so
+runs actually surface once the curator starts writing them. Without the
+role, runs are *invisible* in the UI even though the curator can write
+them via its own UAMI in prod.
 
 ---
 
@@ -95,4 +109,6 @@ Stays installed only because curator still imports it. Removable after gap #3 la
 3. Tail the live classifier worker if still running: `tail -f /tmp/classifier.log`. Otherwise `nohup uv run python -m backend.workers.classifier > /tmp/classifier.log 2>&1 &`.
 4. `git status` → review the 33+ uncommitted files against the suggested split in gap #7.
 
-Start with gap #1 (cheap, gets the suite green) then gap #3 (curator MAF migration), which unlocks gaps #4 and #5 for free.
+Start with gap #3 (curator MAF migration) — it unlocks gaps #4 and #5 for free.
+Then gap #6 (`make worker`) is a quality-of-life fix that prevents a recurrence
+of the "stale worker" confusion that bit us this session.

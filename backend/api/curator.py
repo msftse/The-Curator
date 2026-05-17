@@ -451,9 +451,18 @@ async def list_runs_endpoint(
     container = blob.get_container_client(settings.curator_reports_container)
     prefix = f"{settings.curator_runs_container_prefix}/"
     names: list[str] = []
-    async for b in container.list_blobs(name_starts_with=prefix):
-        if b.name.endswith("/run.json"):
-            names.append(b.name)
+    try:
+        async for b in container.list_blobs(name_starts_with=prefix):
+            if b.name.endswith("/run.json"):
+                names.append(b.name)
+    except Exception as exc:  # noqa: BLE001 — best-effort listing
+        # AuthorizationFailure (missing Storage Blob Data Reader), container
+        # not yet provisioned, or transient network issue. Return [] so the
+        # UI renders "no prior runs" instead of nuking CORS via a 500.
+        log.warning(
+            "curator.list_runs.list_failed", extra={"error": str(exc)}
+        )
+        return []
     # Lexicographic sort works because run_ids are UTC-iso-compact timestamps.
     names.sort(reverse=True)
     out: list[CuratorRunRecord] = []
