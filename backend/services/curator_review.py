@@ -49,10 +49,11 @@ import io
 import json
 import tarfile
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from azure.cosmos.aio import ContainerProxy
 from azure.storage.blob.aio import BlobServiceClient
+from pydantic import BaseModel, Field, ValidationError
 
 from backend.core.blob import published_blob_path
 from backend.core.config import Settings
@@ -182,6 +183,73 @@ def _parse_json_object(text: str) -> dict[str, Any] | None:
     return obj
 
 
+# ---------------------------------------------------------------------------
+# Structured-output schemas for the LLM JSON contract.
+#
+# These are passed to `provider.complete(response_format=...)` so MAF /
+# Foundry validates the response against them server-side. Returned
+# `LLMResult.text` is still the raw JSON string — we re-parse here with
+# `model_validate_json` and fall back to the lenient `_parse_json_object`
+# path for providers (the in-tree FakeLLMProvider) that ignore
+# `response_format` entirely.
+#
+# Schemas match the prompt templates in `curator_review_prompts.py`.
+# `extra="forbid"` so the model can't smuggle unknown keys past us.
+# ---------------------------------------------------------------------------
+
+
+class _DriftReview(BaseModel):
+    """Drift-pass LLM contract — see DRIFT_USER_TEMPLATE."""
+
+    model_config = {"extra": "forbid"}
+
+    verdict: Literal["keep", "patch"]
+    patch_text: str = ""
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    rationale: str = ""
+
+
+class _ConsolidationReview(BaseModel):
+    """Consolidation-pass LLM contract — see CONSOLIDATION_USER_TEMPLATE."""
+
+    model_config = {"extra": "forbid"}
+
+    verdict: Literal["keep", "merge"]
+    umbrella_name: str = ""
+    umbrella_skill_md: str = ""
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    rationale: str = ""
+
+
+def _parse_drift_review(text: str) -> _DriftReview | None:
+    """Strict-then-lenient parse. Strict path wins when MAF returns valid JSON."""
+    try:
+        return _DriftReview.model_validate_json(text)
+    except ValidationError:
+        pass
+    parsed = _parse_json_object(text)
+    if parsed is None:
+        return None
+    try:
+        return _DriftReview.model_validate(parsed)
+    except ValidationError:
+        return None
+
+
+def _parse_consolidation_review(text: str) -> _ConsolidationReview | None:
+    try:
+        return _ConsolidationReview.model_validate_json(text)
+    except ValidationError:
+        pass
+    parsed = _parse_json_object(text)
+    if parsed is None:
+        return None
+    try:
+        return _ConsolidationReview.model_validate(parsed)
+    except ValidationError:
+        return None
+
+
 async def _persist_proposal(
     review_proposals: ContainerProxy,
     proposal: ReviewProposal,
@@ -302,7 +370,7 @@ async def execute_review_pass(
                         user=user_prompt,
                         max_input_tokens=settings.curator_review_max_input_tokens,
                         max_output_tokens=settings.curator_review_max_output_tokens,
-                        response_format="json_object",
+                        response_format=_DriftReview,
                         temperature=0.0,
                     )
                 except LLMProviderError as exc:
@@ -317,16 +385,16 @@ async def execute_review_pass(
                 record.total_output_tokens += result.output_tokens
                 record.model_id = record.model_id or result.model_id
 
-                parsed = _parse_json_object(result.text)
-                if parsed is None:
+                review = _parse_drift_review(result.text)
+                if review is None:
                     log.warning(
                         "review_drift_json_parse_failed",
                         extra={"skill_id": cand["skill_id"]},
                     )
                 else:
-                    verdict = str(parsed.get("verdict", "")).lower()
-                    confidence = float(parsed.get("confidence", 0.0) or 0.0)
-                    rationale = str(parsed.get("rationale", ""))
+                    verdict = review.verdict
+                    confidence = review.confidence
+                    rationale = review.rationale
                     usage = LLMUsage(
                         input_tokens=result.input_tokens,
                         output_tokens=result.output_tokens,
@@ -346,7 +414,7 @@ async def execute_review_pass(
                             patch=PatchPayload(
                                 target_skill_id=cand["skill_id"],
                                 target_version=cand["version"],
-                                patch_text=str(parsed.get("patch_text", "")),
+                                patch_text=review.patch_text,
                                 replacement_mode="full_replace",
                                 rationale=rationale,
                             ),
@@ -357,7 +425,9 @@ async def execute_review_pass(
                         persisted_proposals.append(proposal)
                         record.proposals_emitted += 1
                         record.proposals_by_kind["patch"] += 1
-                    elif verdict == "keep":
+                    else:
+                        # verdict == "keep" — _DriftReview.verdict is a Literal,
+                        # so this branch is exhaustive.
                         proposal = ReviewProposal(
                             run_id=run_id,
                             kind="keep",
@@ -376,11 +446,6 @@ async def execute_review_pass(
                         persisted_proposals.append(proposal)
                         record.proposals_by_kind["keep"] += 1
                         drift_keep_ids.add(cand["skill_id"])
-                    else:
-                        log.warning(
-                            "review_drift_unknown_verdict",
-                            extra={"skill_id": cand["skill_id"], "verdict": verdict},
-                        )
 
                 if record.total_input_tokens + record.total_output_tokens > cost_cap:
                     cost_cap_hit = True
@@ -417,7 +482,7 @@ async def execute_review_pass(
                             user=user_prompt,
                             max_input_tokens=settings.curator_review_max_input_tokens,
                             max_output_tokens=settings.curator_review_max_output_tokens,
-                            response_format="json_object",
+                            response_format=_ConsolidationReview,
                             temperature=0.0,
                         )
                     except LLMProviderError as exc:
@@ -432,49 +497,45 @@ async def execute_review_pass(
                     record.total_output_tokens += result.output_tokens
                     record.model_id = record.model_id or result.model_id
 
-                    parsed = _parse_json_object(result.text)
-                    if parsed is not None:
-                        verdict = str(parsed.get("verdict", "")).lower()
-                        if verdict == "merge":
-                            usage = LLMUsage(
-                                input_tokens=result.input_tokens,
-                                output_tokens=result.output_tokens,
-                                model_id=result.model_id,
-                                prompt_version=PROMPT_VERSION,
+                    review = _parse_consolidation_review(result.text)
+                    if review is not None and review.verdict == "merge":
+                        usage = LLMUsage(
+                            input_tokens=result.input_tokens,
+                            output_tokens=result.output_tokens,
+                            model_id=result.model_id,
+                            prompt_version=PROMPT_VERSION,
+                        )
+                        in_hash = _multi_input_hash(
+                            [
+                                (a["name"], a["version"], a["skill_md"]),
+                                (b["name"], b["version"], b["skill_md"]),
+                            ]
+                        )
+                        umbrella_md = review.umbrella_skill_md.strip()
+                        umbrella_name = (
+                            review.umbrella_name or f"umbrella-{a_id}-{b_id}"
+                        )
+                        if umbrella_md:
+                            proposal = ReviewProposal(
+                                run_id=run_id,
+                                kind="merge",
+                                status="pending",
+                                target_skill_ids=[a_id, b_id],
+                                target_etags={a_id: a["etag"], b_id: b["etag"]},
+                                input_hash=in_hash,
+                                merge=MergePayload(
+                                    merged_skill_ids=[a_id, b_id],
+                                    proposed_umbrella_name=umbrella_name,
+                                    proposed_umbrella_skill_md=umbrella_md,
+                                    rationale=review.rationale,
+                                ),
+                                usage=usage,
+                                confidence=review.confidence,
                             )
-                            in_hash = _multi_input_hash(
-                                [
-                                    (a["name"], a["version"], a["skill_md"]),
-                                    (b["name"], b["version"], b["skill_md"]),
-                                ]
-                            )
-                            umbrella_md = str(parsed.get("umbrella_skill_md", "")).strip()
-                            umbrella_name = str(
-                                parsed.get("umbrella_name", f"umbrella-{a_id}-{b_id}")
-                            )
-                            if umbrella_md:
-                                proposal = ReviewProposal(
-                                    run_id=run_id,
-                                    kind="merge",
-                                    status="pending",
-                                    target_skill_ids=[a_id, b_id],
-                                    target_etags={a_id: a["etag"], b_id: b["etag"]},
-                                    input_hash=in_hash,
-                                    merge=MergePayload(
-                                        merged_skill_ids=[a_id, b_id],
-                                        proposed_umbrella_name=umbrella_name,
-                                        proposed_umbrella_skill_md=umbrella_md,
-                                        rationale=str(parsed.get("rationale", "")),
-                                    ),
-                                    usage=usage,
-                                    confidence=float(
-                                        parsed.get("confidence", 0.0) or 0.0
-                                    ),
-                                )
-                                await _persist_proposal(review_proposals, proposal)
-                                persisted_proposals.append(proposal)
-                                record.proposals_emitted += 1
-                                record.proposals_by_kind["merge"] += 1
+                            await _persist_proposal(review_proposals, proposal)
+                            persisted_proposals.append(proposal)
+                            record.proposals_emitted += 1
+                            record.proposals_by_kind["merge"] += 1
                     if record.total_input_tokens + record.total_output_tokens > cost_cap:
                         cost_cap_hit = True
                         record.aborted_reason = "cost_cap"

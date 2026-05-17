@@ -6,15 +6,13 @@ sent on every request, no persistent agent resource is created. This fits our
 two consumers (classifier + curator) which both run one-shot completions
 with no tools or threads.
 
-Why MAF (and not raw ``openai.AsyncAzureOpenAI`` or the legacy
-``azure-ai-inference`` SDK)?
+Why MAF (and not raw ``openai.AsyncAzureOpenAI``)?
 
 * The configured Foundry endpoint speaks the AOAI URL shape
   (``/openai/deployments/.../chat/completions``) but only when reached through
-  the **Project**, not the AI Services account root. The legacy
-  ``azure-ai-inference`` SDK posts to ``/models/chat/completions`` and 404s.
+  the **Project**, not the AI Services account root.
 * MAF supports structured outputs natively (``response_format=PydanticClass``),
-  which we use from the classifier for typed ``Classification`` JSON.
+  which both the classifier and curator review pass rely on for typed JSON.
 * It puts us on the same surface the curator will use later for agentic flows
   (hosted tools, threads, MCP) without another migration.
 

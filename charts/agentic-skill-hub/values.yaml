@@ -149,9 +149,8 @@ classifier:
     APPINSIGHTS_CONNECTION_STRING: ""
     OTEL_SERVICE_ROLE: "classifier"
     CLASSIFIER_PROVIDER: "llm"
-    FOUNDRY_ENDPOINT: ""
     FOUNDRY_DEPLOYMENT: ""
-    FOUNDRY_API_VERSION: "2024-08-01-preview"
+    AZURE_AI_PROJECT_ENDPOINT: ""
     # AZURE_AI_FOUNDRY_API_KEY is mounted from Key Vault (see keyVault below).
   # KEDA Redis scaler — drives the Deployment between 0 and maxReplicaCount
   # based on `LLEN queue:classifier`. AGENTS.md §4 rule 4 mitigation chain
@@ -203,9 +202,8 @@ curator:
     APPINSIGHTS_CONNECTION_STRING: ""
     OTEL_SERVICE_ROLE: "curator"
     CURATOR_REVIEW_ENABLED: "false"
-    FOUNDRY_ENDPOINT: ""
     FOUNDRY_DEPLOYMENT: ""
-    FOUNDRY_API_VERSION: "2024-08-01-preview"
+    AZURE_AI_PROJECT_ENDPOINT: ""
 
 # ---------------------------------------------------------------------------
 # Key Vault Secrets Provider (CSI driver)

@@ -153,15 +153,12 @@ class Settings(BaseSettings):
     # Provider toggle (only "foundry" or test-only "fake" supported).
     curator_review_provider: Literal["foundry", "fake"] = "foundry"
 
-    # Azure AI Foundry endpoint config.
-    foundry_endpoint: str = ""  # e.g. "https://my-foundry.services.ai.azure.com/models"
+    # Azure AI Foundry deployment.
     foundry_deployment: str = ""  # deployment name or model id
-    foundry_api_version: str = "2024-08-01-preview"
 
     # Azure AI Foundry **Project** endpoint (Microsoft Agent Framework).
-    # Distinct from `foundry_endpoint` (which is the AI Services account
-    # root, suitable for legacy azure-ai-inference). The Project endpoint
-    # is what MAF's `FoundryChatClient` and `FoundryAgent` consume:
+    # The single endpoint consumed by both the classifier and the curator
+    # review pass via MAF's `FoundryChatClient`. Shape:
     #   https://<account>.services.ai.azure.com/api/projects/<project-name>
     # Discover with:
     #   az rest --method GET --url \

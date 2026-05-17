@@ -42,33 +42,39 @@ them via its own UAMI in prod.
 
 ---
 
-## 3. Curator review path still uses the legacy Inference SDK
+## 3. Curator review path still uses the legacy Inference SDK  ✅ DONE
 
-**File:** `backend/services/curator_review.py` + the same `FoundryLLMProvider` it shares with the classifier.
-**Current state:** Curator calls `provider.complete(response_format="json_object", ...)`. Now that the provider is MAF-backed, `"json_object"` is silently ignored (the prompt does the work) and the curator's lenient JSON parser handles the result. So **it works**, but it doesn't benefit from Pydantic-validated structured outputs the way the classifier does.
-**Why this matters:** Curator JSON parse failures are currently best-effort; with a `response_format=PydanticClass` we'd get server-side schema enforcement and the same observability story as the classifier.
-**Fix shape:**
-- Define `_CuratorReview(BaseModel)` (or equivalent) in `backend/services/curator_review.py` matching the existing JSON contract.
-- Swap `response_format="json_object"` → `response_format=_CuratorReview`.
-- Drop the lenient parser branch once parity is proven against the existing curator-review unit tests.
-**Risk:** Curator dry-run + rollback round-trip tests must still pass. AGENTS.md §5 invariants are unchanged by this work.
+Migrated in this session. `backend/services/curator_review.py` now:
 
----
+- Defines `_DriftReview(BaseModel)` and `_ConsolidationReview(BaseModel)` matching the prompts in `curator_review_prompts.py` (both `extra="forbid"`).
+- Passes the class as `response_format=_DriftReview` / `response_format=_ConsolidationReview` to MAF for server-side structured-output validation.
+- Parses results with `model_validate_json` first, falling back to the existing lenient `_parse_json_object` path so `FakeLLMProvider` (which ignores `response_format`) keeps working in unit tests.
+- The "unknown verdict" branch on the drift pass is now unreachable — `_DriftReview.verdict` is `Literal["keep", "patch"]`.
 
-## 4. Two Foundry endpoint env vars is a foot-gun
-
-**Files:** `.env.local.example`, `.env.local`, `backend/core/config.py`.
-**State:** We require both `FOUNDRY_ENDPOINT` (`/models` shape, legacy Inference SDK, used by curator) **and** `AZURE_AI_PROJECT_ENDPOINT` (`/api/projects/<name>` shape, MAF, used by classifier). Documented in the .example file, but a future contributor will absolutely set one and forget the other.
-**Resolution options:**
-1. Wait until gap #3 is fixed (curator migrated to MAF), then **delete `FOUNDRY_ENDPOINT` + `FOUNDRY_API_VERSION` entirely** and drop the `azure-ai-inference` dep.
-2. Or: derive one from the other in `Settings` (the project endpoint is `<base>/api/projects/<name>`, the inference endpoint is `<base>/models` — both share the `<base>` hostname).
-**Recommended:** Do #1 right after #3.
+Full suite still 182/182.
 
 ---
 
-## 5. `azure-ai-inference` is still in `pyproject.toml`
+## 4. Two Foundry endpoint env vars  ✅ DONE
 
-Stays installed only because curator still imports it. Removable after gap #3 lands. `agent-framework-foundry>=1.0.0b9` + `azure-ai-agents>=1.2.0b5` are the keepers.
+After gap #3, the curator no longer needs the `/models` Inference endpoint.
+Dropped from `backend/core/config.py`, `charts/agentic-skill-hub/values.yaml`,
+`.env.local`, and `.env.local.example`:
+
+- `FOUNDRY_ENDPOINT` (no longer read anywhere)
+- `FOUNDRY_API_VERSION` (no longer read anywhere)
+
+Single Foundry endpoint env var remains: `AZURE_AI_PROJECT_ENDPOINT`. Both
+classifier and curator route through it via MAF's `FoundryChatClient`.
+
+---
+
+## 5. `azure-ai-inference` is still in `pyproject.toml`  ✅ PARTIAL
+
+Removed as a **direct** dependency from `pyproject.toml`. It survives in
+`uv.lock` as a transitive of `agent-framework-foundry` (via
+`agent-framework-openai`). Nothing actionable on our side until MAF drops
+that transitive — `uv tree` confirms there's no other ancestor.
 
 ---
 
@@ -109,6 +115,7 @@ Stays installed only because curator still imports it. Removable after gap #3 la
 3. Tail the live classifier worker if still running: `tail -f /tmp/classifier.log`. Otherwise `nohup uv run python -m backend.workers.classifier > /tmp/classifier.log 2>&1 &`.
 4. `git status` → review the 33+ uncommitted files against the suggested split in gap #7.
 
-Start with gap #3 (curator MAF migration) — it unlocks gaps #4 and #5 for free.
-Then gap #6 (`make worker`) is a quality-of-life fix that prevents a recurrence
-of the "stale worker" confusion that bit us this session.
+Start with gap #6 (`make worker`) — quality-of-life fix that prevents a
+recurrence of the "stale worker" confusion that bit us this session. Then
+gap #2 (MAF token accounting) if it's still emitting zeros after MAF beta
+ships a fix. Gap #8 is stretch.
