@@ -62,7 +62,7 @@ jobs:
             ENV="dev"
           fi
           echo "env=$ENV"               >> "$GITHUB_OUTPUT"
-          echo "rg=rg-skillhub-$ENV"    >> "$GITHUB_OUTPUT"
+          echo "rg=rg-$ENV"             >> "$GITHUB_OUTPUT"
 
   # -----------------------------------------------------------------------
   # 1. infra — Bicep what-if + apply.

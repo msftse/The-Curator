@@ -35,14 +35,14 @@ resource kv 'Microsoft.KeyVault/vaults@2023-07-01' = {
   }
 }
 
-// Seed secret names (values are populated post-deploy by the rotate-key workflow
-// or manually for the Entra client secret).
+// Seed secret names (values are populated post-deploy by the rotate-key workflow).
+// No `entra-client-secret`: the SPA is a public client (MSAL PKCE redirect) and
+// the backend validates JWTs via JWKS — no confidential-client flow exists.
 var secretNames = [
   'cosmos-key'
   'blob-connection-string'
   'redis-primary-key'
   'appinsights-connection-string'
-  'entra-client-secret'
   'apikey-pepper'
 ]
 

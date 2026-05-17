@@ -98,14 +98,15 @@ Run **once per environment**. The deploy workflow takes over from step 6.
 5. **Seed Key Vault secrets** that can't be auto-generated:
 
    ```bash
-   az keyvault secret set --vault-name kv-skillhub-dev-eastus \
-     --name entra-client-secret --value <secret-from-step-2>
-   az keyvault secret set --vault-name kv-skillhub-dev-eastus \
+   az keyvault secret set --vault-name kv-skillhub-dev-eastus2 \
      --name apikey-pepper --value "$(openssl rand -hex 32)"
    # Foundry key for the classifier/curator (if review enabled):
-   az keyvault secret set --vault-name kv-skillhub-dev-eastus \
+   az keyvault secret set --vault-name kv-skillhub-dev-eastus2 \
      --name foundry-api-key --value <key>
    ```
+
+   The SPA is a public client (MSAL PKCE) and the backend validates JWTs
+   via JWKS, so there is no `entra-client-secret` to seed.
 
    Cosmos/Redis/Storage keys are populated by the `rotate-key.yml` workflow.
 
