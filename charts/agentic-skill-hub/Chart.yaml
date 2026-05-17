@@ -23,7 +23,3 @@ keywords:
   - workload-identity
 maintainers:
   - name: agentic-skill-hub
-# Same artwork as the frontend favicon (`frontend/app/icon.png`). Kept
-# alongside Chart.yaml so the path resolves whether the chart is rendered
-# from the repo or unpacked from a packaged tarball.
-icon: file://icon.png
