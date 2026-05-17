@@ -59,10 +59,12 @@ param enableKvPurgeProtection bool = env == 'prod'
   'Standard'
   'Premium'
 ])
-param acrSku string = env == 'prod' ? 'Premium' : 'Standard'
+// NOTE: Sub policy in MngEnvMCAP* doesn't permit Basic/Standard ACR — only
+// Premium is allowed. Cost trade-off accepted in dev for the unblock.
+param acrSku string = 'Premium'
 
-@description('Kubernetes version.')
-param kubernetesVersion string = '1.30.5'
+@description('Kubernetes version. Bump as Azure deprecates; 1.30.5 became LTS-only in 2026-05.')
+param kubernetesVersion string = '1.34.7'
 
 @description('AGIC ingress mode. `addon` for dev/staging, `byo` for prod.')
 @allowed([

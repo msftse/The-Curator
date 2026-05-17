@@ -4,10 +4,10 @@ param env = 'dev'
 param location = 'eastus'
 param authMode = 'oidc'
 // Populate these from `scripts/setup-entra.sh dev <frontend-hostname>` output:
-param entraTenantId = ''
-param entraClientId = ''
-param entraSpaClientId = ''
-param entraGroupIdAdmin = ''
+param entraTenantId = 'REDACTED-TENANT-ID'
+param entraClientId = 'REDACTED-API-CLIENT-ID'
+param entraSpaClientId = 'REDACTED-SPA-CLIENT-ID'
+param entraGroupIdAdmin = 'REDACTED-ADMIN-GROUP-ID'
 
 // --- M4 additions.
 
@@ -19,3 +19,7 @@ param aadAdminGroupObjectIds = []
 
 // Container Insights workspace. Leave empty to disable OMS agent in dev.
 param logAnalyticsWorkspaceId = ''
+
+// AKS version override. main.bicep default is 1.30.5 which is now LTS-only;
+// pin a current standard-support version here. Bump as Azure deprecates.
+param kubernetesVersion = '1.34.7'

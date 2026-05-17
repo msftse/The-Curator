@@ -36,10 +36,10 @@ param env string
 param kubernetesVersion string = '1.30.5'
 
 @description('System pool VM SKU. 2-node baseline for AKS-managed pods (CoreDNS, metrics-server, AGIC).')
-param systemPoolVmSize string = 'Standard_D2s_v5'
+param systemPoolVmSize string = 'Standard_D2s_v3'
 
 @description('User pool VM SKU. Hosts application workloads.')
-param userPoolVmSize string = env == 'prod' ? 'Standard_D4s_v5' : 'Standard_D2s_v5'
+param userPoolVmSize string = env == 'prod' ? 'Standard_D4s_v3' : 'Standard_D2s_v3'
 
 @description('User pool autoscale min count.')
 param userPoolMinCount int = env == 'prod' ? 2 : 1
@@ -54,8 +54,8 @@ param userPoolMaxCount int = env == 'prod' ? 10 : 5
 ])
 param agicMode string = env == 'prod' ? 'byo' : 'addon'
 
-@description('Subnet CIDR for the add-on App Gateway. Required when agicMode=addon. Must not overlap pod/service CIDRs.')
-param agicSubnetCidr string = '10.225.0.0/16'
+@description('Subnet CIDR for the add-on App Gateway. Required when agicMode=addon. Must not overlap pod/service CIDRs. Azure caps AGIC + CNI Overlay subnets at /24.')
+param agicSubnetCidr string = '10.225.0.0/24'
 
 @description('Existing App Gateway resource ID. Required when agicMode=byo. Must be in the same region.')
 param agicAppGatewayId string = ''

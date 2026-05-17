@@ -46,7 +46,7 @@ param curatorPrincipalId string
 param assignCosmosDataPlane bool = false
 
 // Built-in role definition IDs (subscription-scoped).
-var kvSecretsUserRoleId = '4633458b-17de-9032-9817-3b16e3a85e6a'  // Key Vault Secrets User
+var kvSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'  // Key Vault Secrets User
 var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 // Storage Blob Delegator — grants `generateUserDelegationKey/action`, the
 // permission required to mint user-delegation SAS tokens. Data Contributor
