@@ -100,16 +100,11 @@ local-dev section unchanged: `make dev` is the recommended entrypoint.
 
 ---
 
-## 7. Uncommitted branch is large
+## 7. Uncommitted branch is large  ✅ DONE
 
-**State:** 33+ modified files spanning classifier MAF rewrite, category/tags upload feature, detail-page redesign, and AGENTS.md edits. Nothing committed this session.
-**Suggested split:**
-1. **Classifier → MAF + structured outputs** (`backend/services/llm/foundry.py`, `provider.py`, `classifier_stub.py`, `pyproject.toml`, `.env.local.example`, `backend/core/config.py`).
-2. **Category + tags upload feature** (`backend/models/skill.py`, `backend/api/uploads.py`, `backend/services/upload.py`, `backend/workers/classifier.py`, frontend `upload/page.tsx` + `lib/api/client.ts`).
-3. **Detail page redesign** (frontend `components/catalog/SkillDetailHeader.tsx`, `SkillDetailMeta.tsx`, `MarkdownView.tsx`).
-4. **AGENTS.md never-delete clarification** + the test fix from gap #1 (do these together so the test stays green at every commit).
-5. **Makefile + ops polish** (port-8000 guard, worker target from gap #6).
-**Hold:** `.env.local` (gitignored — confirmed), `next-env.d.ts` (regenerates).
+Cleared in commits `900581a`, `1c925c0`, `6c12b99`, `29949c2`, `25fbcef`,
+`e14e021`, `604a5da`. Working tree is clean; the M3-era 33-file pile no
+longer exists.
 
 ---
 
@@ -118,18 +113,17 @@ local-dev section unchanged: `make dev` is the recommended entrypoint.
 - **Curator UI**: PRD §11 + plan `m2.2-frontend-curator-ui.md` is the next functional milestone if no fires.
 - **AKS deployment** plan `m4-aks-deployment.md` is staged but not started; depends on M3 being stable.
 - **Pre-commit hooks**: ✅ DONE. `.pre-commit-config.yaml` now runs trailing-whitespace / EOF / yaml / large-files / private-key / merge-conflict checks, plus `ruff` (lint) + `ruff format`, plus a local `never-delete-invariant` hook that runs the AST gate test on any `backend/**.py` change. `ruff-pre-commit` pinned to `v0.15.13` to match the project's installed ruff (the older `v0.5.7` produced spurious reformats on first run). Helm template YAML is excluded from `check-yaml` because `{{ … }}` placeholders aren't valid YAML.
-- **Token observability**: blocked on gap #2 resolution.
+- **Token observability**: ✅ unblocked (gap #2 done). Wire `tokens_in` / `tokens_out` from `FoundryLLMProvider.complete()` to App Insights or a Cosmos counter on the skill doc.
+- **`.opencode/` tracking**: untouched. If we ever want to stop tracking it, the move is `git rm --cached -r .opencode/` + add `.opencode/` back to `.gitignore`. Today the 26 files there are still tracked deliberately.
 
 ---
 
 ## Quick re-orientation tomorrow
 
 1. `cat .agents/GAPS.md` (this file).
-2. `uv run pytest backend/tests/unit/ -x` → confirm 180/181, single failure should still be the never-delete AST test.
-3. Tail the live classifier worker if still running: `tail -f /tmp/classifier.log`. Otherwise `nohup uv run python -m backend.workers.classifier > /tmp/classifier.log 2>&1 &`.
-4. `git status` → review the 33+ uncommitted files against the suggested split in gap #7.
+2. `uv run pytest backend/tests/unit/ -q` → expect 187/187 green.
+3. `make dev` to bring up uvicorn + classifier worker (worker logs at `/tmp/skillhub-worker.log`).
+4. `git status` should be clean; if not, run `pre-commit run --all-files` first.
 
-Start with gap #6 (`make worker`) — quality-of-life fix that prevents a
-recurrence of the "stale worker" confusion that bit us this session. Then
-gap #2 (MAF token accounting) if it's still emitting zeros after MAF beta
-ships a fix. Gap #8 is stretch.
+Next functional work: **Curator UI** (`m2.2-frontend-curator-ui.md`) or
+**AKS deployment** (`m4-aks-deployment.md`) — both stretch items in #8.
