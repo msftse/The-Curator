@@ -108,18 +108,36 @@ jobs:
       - name: Find latest successful infra deployment
         id: find
         run: |
-          # azd names its root deployment "skillhub-<env>-..." or similar;
-          # we just take the most recent Succeeded deployment in the RG
-          # that produced our expected outputs (i.e. has `acrLoginServer`).
-          NAME=$(az deployment group list -g "$RG" \
-            --query "sort_by([?properties.provisioningState=='Succeeded'], &properties.timestamp)[-1].name" \
+          # The root deployment from `azd provision` is the only one with
+          # our outputs. We can't filter by `outputs` server-side, so list
+          # Succeeded deployments newest-first and pick the first one whose
+          # `acrLoginServer` output is populated. This skips module child
+          # deployments (`identity`, `aks`, etc.) and Azure platform
+          # auto-deployments (Failure-Anomalies-Alert-Rule, etc.).
+          set -euo pipefail
+          NAMES=$(az deployment group list -g "$RG" \
+            --query "reverse(sort_by([?properties.provisioningState=='Succeeded'], &properties.timestamp))[].name" \
             -o tsv)
-          if [[ -z "$NAME" ]]; then
-            echo "::error::No successful deployment found in $RG. Run 'azd provision' first."
+          if [[ -z "$NAMES" ]]; then
+            echo "::error::No successful deployments found in $RG. Run 'azd provision' first."
             exit 1
           fi
-          echo "Using deployment: $NAME"
-          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          MATCH=""
+          while IFS= read -r N; do
+            [[ -z "$N" ]] && continue
+            HAS=$(az deployment group show -g "$RG" -n "$N" \
+              --query "properties.outputs.acrLoginServer.value" -o tsv 2>/dev/null || true)
+            if [[ -n "$HAS" ]]; then
+              MATCH="$N"
+              break
+            fi
+          done <<< "$NAMES"
+          if [[ -z "$MATCH" ]]; then
+            echo "::error::No deployment in $RG exposes acrLoginServer. Run 'azd provision'."
+            exit 1
+          fi
+          echo "Using deployment: $MATCH"
+          echo "name=$MATCH" >> "$GITHUB_OUTPUT"
 
       - name: Fetch deployment outputs
         run: |
