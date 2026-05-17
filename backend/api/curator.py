@@ -459,9 +459,7 @@ async def list_runs_endpoint(
         # AuthorizationFailure (missing Storage Blob Data Reader), container
         # not yet provisioned, or transient network issue. Return [] so the
         # UI renders "no prior runs" instead of nuking CORS via a 500.
-        log.warning(
-            "curator.list_runs.list_failed", extra={"error": str(exc)}
-        )
+        log.warning("curator.list_runs.list_failed", extra={"error": str(exc)})
         return []
     # Lexicographic sort works because run_ids are UTC-iso-compact timestamps.
     names.sort(reverse=True)

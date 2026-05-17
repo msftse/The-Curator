@@ -32,10 +32,7 @@ class _FakeContainer:
         match_condition=None,
     ):
         self.replace_calls += 1
-        if (
-            match_condition == MatchConditions.IfNotModified
-            and etag != self._item["_etag"]
-        ):
+        if match_condition == MatchConditions.IfNotModified and etag != self._item["_etag"]:
             raise cosmos_exc.CosmosAccessConditionFailedError(
                 status_code=412, message="precondition failed"
             )
@@ -55,9 +52,7 @@ async def test_etag_retry_succeeds_first_try():
         body["load_count"] += 1
         return body
 
-    out = await replace_with_etag_retry(
-        container, item_id="x", partition_key="x", mutate=_mut
-    )
+    out = await replace_with_etag_retry(container, item_id="x", partition_key="x", mutate=_mut)
     assert out["load_count"] == 1
     assert container.replace_calls == 1
     assert container.read_calls == 1
@@ -80,9 +75,7 @@ async def test_etag_retry_retries_on_412():
             raise cosmos_exc.CosmosAccessConditionFailedError(
                 status_code=412, message="lost the race"
             )
-        return await real_replace(
-            item=item, body=body, etag=etag, match_condition=match_condition
-        )
+        return await real_replace(item=item, body=body, etag=etag, match_condition=match_condition)
 
     container.replace_item = flaky_replace  # type: ignore[method-assign]
 
@@ -102,9 +95,7 @@ async def test_etag_retry_gives_up_after_max_attempts():
     container = _FakeContainer({"id": "x", "skill_id": "x", "load_count": 0})
 
     async def always_412(*, item, body, etag=None, match_condition=None):  # noqa: ARG001
-        raise cosmos_exc.CosmosAccessConditionFailedError(
-            status_code=412, message="nope"
-        )
+        raise cosmos_exc.CosmosAccessConditionFailedError(status_code=412, message="nope")
 
     container.replace_item = always_412  # type: ignore[method-assign]
 

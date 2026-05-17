@@ -37,7 +37,7 @@ async with (
             approval_mode="never_require",  # Don't ask for approval
         ),
     )
-    
+
     result = await agent.run("How do I use Azure Functions?")
     print(result.text)
 ```
@@ -125,7 +125,7 @@ async with (
         instructions="Answer questions using the documentation.",
         tools=mcp_tool,
     )
-    
+
     result = await agent.run("What is Azure AI Foundry?")
     print(result.text)
 ```
@@ -241,7 +241,7 @@ async with (
         - Execute Python code for analysis
         - Access company internal APIs via MCP
         - Get user information
-        
+
         Always verify user identity before accessing sensitive data.""",
         tools=[
             get_user_id,
@@ -268,7 +268,7 @@ try:
             tools=mcp_tool,
         )
         result = await agent.run("Query using MCP")
-        
+
 except ConnectionError as e:
     print(f"Failed to connect to MCP server: {e}")
 except TimeoutError as e:

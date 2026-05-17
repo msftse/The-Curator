@@ -25,6 +25,7 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1", tags=["uploads"])
 
+
 @router.get("/categories", response_model=list[str])
 async def list_categories() -> list[str]:
     """Canonical category taxonomy for the upload UI dropdown.

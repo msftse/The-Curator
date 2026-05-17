@@ -93,13 +93,9 @@ async def rollback(
 
         # Pre-rollback snapshot — makes rollback reversible.
         pre_name = f"pre-rollback-{_utc_iso_compact()}"
-        await snapshot_svc.snapshot_published(
-            blob, settings, run_id=pre_name, prefix=pre_name
-        )
+        await snapshot_svc.snapshot_published(blob, settings, run_id=pre_name, prefix=pre_name)
 
-        tar_bytes = await snapshot_svc.download_snapshot_tar(
-            blob, settings, snapshot_name
-        )
+        tar_bytes = await snapshot_svc.download_snapshot_tar(blob, settings, snapshot_name)
         files = snapshot_svc.extract_snapshot_files(tar_bytes)
 
         restored: list[Transition] = []
@@ -206,9 +202,7 @@ async def _restore_cosmos_status(
         {"name": "@v", "value": version},
     ]
     rows = []
-    async for raw in skills.query_items(
-        query=query, parameters=params, partition_key=skill_id
-    ):
+    async for raw in skills.query_items(query=query, parameters=params, partition_key=skill_id):
         rows.append(raw)
         break
 

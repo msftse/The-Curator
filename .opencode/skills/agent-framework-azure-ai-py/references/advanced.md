@@ -13,7 +13,7 @@ from azure.identity.aio import AzureCliCredential
 
 class MovieRecommendation(BaseModel):
     model_config = ConfigDict(extra="forbid")  # Strict validation
-    
+
     title: str
     year: int
     genre: str
@@ -29,7 +29,7 @@ async with (
         instructions="Recommend movies based on user preferences.",
         response_format=MovieRecommendation,  # Set at creation
     )
-    
+
     result = await agent.run("Recommend a sci-fi movie")
     movie = MovieRecommendation.model_validate_json(result.text)
     print(f"{movie.title} ({movie.year}) - {movie.rating}/10")
@@ -208,11 +208,11 @@ async with (
         instructions="Analyze data and create visualizations.",
         tools=HostedCodeInterpreterTool(),
     )
-    
+
     result = await agent.run(
         "Create a bar chart of sales data: Q1=100, Q2=150, Q3=120, Q4=200. Save as PNG."
     )
-    
+
     # Check for generated files in the response
     print(result.text)
 ```
@@ -229,16 +229,16 @@ async with (
 ):
     # Upload a file
     from pathlib import Path
-    
+
     file = await agents_client.files.upload(
         file_path=Path("data/sales.csv"),
         purpose="agents"
     )
     print(f"Uploaded file ID: {file.id}")
-    
+
     # Use file with code interpreter
     from agent_framework import HostedCodeInterpreterTool, HostedFileContent
-    
+
     agent = await provider.create_agent(
         name="CSVAnalyst",
         instructions="Analyze the provided CSV file.",
@@ -246,7 +246,7 @@ async with (
             inputs=[HostedFileContent(file_id=file.id)]
         ),
     )
-    
+
     result = await agent.run("Summarize the data in the uploaded file")
 ```
 
@@ -260,10 +260,10 @@ async with (
 agent = await provider.create_agent(
     name="ResearchAgent",
     instructions="""Answer questions using the knowledge base.
-    
+
     IMPORTANT: Always cite your sources using this format:
     【message_idx:search_idx†source_name】
-    
+
     Example: "Azure Functions supports Python【1:0†azure-docs】"
     """,
     tools=[
@@ -281,14 +281,14 @@ def parse_citations(text: str) -> list[dict]:
     """Extract citations from agent response."""
     pattern = r'【(\d+):(\d+)†([^】]+)】'
     citations = []
-    
+
     for match in re.finditer(pattern, text):
         citations.append({
             "message_idx": int(match.group(1)),
             "search_idx": int(match.group(2)),
             "source": match.group(3),
         })
-    
+
     return citations
 
 result = await agent.run("What is Azure Functions?")
@@ -346,7 +346,7 @@ async with (
         instructions="You remember everything.",
     )
     agent_id = agent.id  # Save this
-    
+
     # Later: retrieve the same agent
     same_agent = await provider.get_agent(agent_id=agent_id)
 ```
@@ -363,10 +363,10 @@ async with (
 ):
     # Get agent via SDK
     sdk_agent = await agents_client.get_agent("agent-id")
-    
+
     # Wrap as ChatAgent (no HTTP call)
     agent = provider.as_agent(sdk_agent)
-    
+
     # Now use with agent framework
     result = await agent.run("Hello!")
 ```
@@ -388,7 +388,7 @@ async def run_with_fallback(agent, query: str, thread=None):
     except Exception as e:
         # Log the error
         print(f"Tool execution error: {e}")
-        
+
         # Create fallback agent without tools
         fallback_agent = await provider.create_agent(
             name="FallbackAgent",
@@ -440,7 +440,7 @@ async with (
     # Create multiple agents with same provider
     agent1 = await provider.create_agent(name="Agent1", instructions="...")
     agent2 = await provider.create_agent(name="Agent2", instructions="...")
-    
+
     # Process multiple requests
     for query in queries:
         await agent1.run(query)
@@ -463,13 +463,13 @@ async def process_queries(provider, queries: list[str]) -> list[str]:
         name="BatchAgent",
         instructions="Answer questions concisely.",
     )
-    
+
     # Each query gets its own thread
     async def process_one(query: str) -> str:
         thread = agent.get_new_thread()
         result = await agent.run(query, thread=thread)
         return result.text
-    
+
     results = await asyncio.gather(*[process_one(q) for q in queries])
     return results
 ```

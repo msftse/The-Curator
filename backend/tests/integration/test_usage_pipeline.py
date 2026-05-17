@@ -49,9 +49,7 @@ async def _cleanup_skill(settings, skill_id: str) -> None:
                     partition_key=skill_id,
                 ):
                     with contextlib.suppress(Exception):
-                        await cont.delete_item(
-                            item=row["id"], partition_key=skill_id
-                        )
+                        await cont.delete_item(item=row["id"], partition_key=skill_id)
     finally:
         await client.close()
     r = get_redis(settings)
@@ -106,9 +104,7 @@ async def test_usage_endpoint_records_event_and_bumps_counter(app_client):
             assert r.status_code == 200, r.text
 
             # Re-read skill doc — counters should be bumped.
-            raw = await skills.read_item(
-                item=f"{skill_id}::1.0.0", partition_key=skill_id
-            )
+            raw = await skills.read_item(item=f"{skill_id}::1.0.0", partition_key=skill_id)
             assert raw["usage"]["load_count"] == 1
             assert raw["usage"]["last_loaded_at"] is not None
         finally:

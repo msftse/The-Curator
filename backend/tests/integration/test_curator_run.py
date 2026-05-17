@@ -71,9 +71,7 @@ async def _cleanup(settings, skill_id: str) -> None:
                     partition_key=skill_id,
                 ):
                     with contextlib.suppress(Exception):
-                        await cont.delete_item(
-                            item=row["id"], partition_key=skill_id
-                        )
+                        await cont.delete_item(item=row["id"], partition_key=skill_id)
     finally:
         await cosmos.close()
 
@@ -98,9 +96,7 @@ async def test_dry_run_then_real_match(app_client, as_admin):
         r2 = await client.post("/v1/admin/curator/run")
         assert r2.status_code == 200, r2.text
         real = r2.json()
-        real_ids = sorted(
-            t["skill_id"] for t in real["transitions"] if t["applied"]
-        )
+        real_ids = sorted(t["skill_id"] for t in real["transitions"] if t["applied"])
         # Real run should include at least the same skill_id.
         assert skill_id in real_ids
     finally:

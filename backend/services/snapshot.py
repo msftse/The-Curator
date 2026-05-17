@@ -118,16 +118,12 @@ async def snapshot_published(
     await tar_blob.upload_blob(tar_bytes, overwrite=True)
 
     manifest_blob = snapshots.get_blob_client(f"{folder}/manifest.json")
-    await manifest_blob.upload_blob(
-        manifest.model_dump_json().encode("utf-8"), overwrite=True
-    )
+    await manifest_blob.upload_blob(manifest.model_dump_json().encode("utf-8"), overwrite=True)
 
     return manifest
 
 
-async def list_snapshots(
-    blob: BlobServiceClient, settings: Settings
-) -> list[str]:
+async def list_snapshots(blob: BlobServiceClient, settings: Settings) -> list[str]:
     """Top-level snapshot folder names sorted descending (newest first)."""
     snapshots = blob.get_container_client(settings.blob_snapshots_container)
     seen: set[str] = set()
@@ -142,9 +138,7 @@ async def list_snapshots(
     return sorted(seen, reverse=True)
 
 
-async def load_manifest(
-    blob: BlobServiceClient, settings: Settings, name: str
-) -> SnapshotManifest:
+async def load_manifest(blob: BlobServiceClient, settings: Settings, name: str) -> SnapshotManifest:
     from backend.core.errors import SnapshotNotFound
 
     snapshots = blob.get_container_client(settings.blob_snapshots_container)
@@ -157,9 +151,7 @@ async def load_manifest(
     return SnapshotManifest.model_validate(json.loads(raw))
 
 
-async def download_snapshot_tar(
-    blob: BlobServiceClient, settings: Settings, name: str
-) -> bytes:
+async def download_snapshot_tar(blob: BlobServiceClient, settings: Settings, name: str) -> bytes:
     snapshots = blob.get_container_client(settings.blob_snapshots_container)
     client = snapshots.get_blob_client(f"{name}/skills.tar.gz")
     downloader = await client.download_blob()
@@ -171,9 +163,7 @@ def extract_snapshot_files(tar_bytes: bytes) -> dict[str, bytes]:
     return _extract_tar(tar_bytes)
 
 
-async def rotate_retention(
-    blob: BlobServiceClient, settings: Settings
-) -> list[str]:
+async def rotate_retention(blob: BlobServiceClient, settings: Settings) -> list[str]:
     """Keep newest N; move older snapshots into `_retired/` (never delete).
 
     Returns the list of names that were rotated.

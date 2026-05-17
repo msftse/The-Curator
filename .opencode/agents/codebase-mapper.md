@@ -85,11 +85,11 @@ A 2-3 sentence high-level summary of what the project is and does.
 The architectural pattern(s) and high-level design approach.
 
 ### 🛠️ Technology Stack
-- **Language(s)**: 
-- **Framework(s)**: 
-- **Build/Package Tools**: 
-- **Testing**: 
-- **Infrastructure**: 
+- **Language(s)**:
+- **Framework(s)**:
+- **Build/Package Tools**:
+- **Testing**:
+- **Infrastructure**:
 
 ### 📁 Directory Structure
 A annotated tree of the key directories and their purposes. Do NOT list every single file — focus on directories and landmark files that matter.

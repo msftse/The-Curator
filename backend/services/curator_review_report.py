@@ -47,9 +47,7 @@ def render_review_report(
         lines.append("| --- | --- | --- | --- | --- |")
         for p in sorted(proposals, key=lambda x: (x.kind, x.id)):
             targets = ",".join(p.target_skill_ids)
-            lines.append(
-                f"| {p.id} | {p.kind} | {p.status} | {targets} | {p.confidence:.2f} |"
-            )
+            lines.append(f"| {p.id} | {p.kind} | {p.status} | {targets} | {p.confidence:.2f} |")
     lines.append("")
     return "\n".join(lines)
 

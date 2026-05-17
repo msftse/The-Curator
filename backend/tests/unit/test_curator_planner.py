@@ -24,11 +24,7 @@ def _doc(
     last_loaded_days_ago: int | None = None,
     uploaded_days_ago: int = 5,
 ) -> SkillDoc:
-    last = (
-        _NOW - timedelta(days=last_loaded_days_ago)
-        if last_loaded_days_ago is not None
-        else None
-    )
+    last = _NOW - timedelta(days=last_loaded_days_ago) if last_loaded_days_ago is not None else None
     return SkillDoc(
         id=f"{skill_id}::1.0.0",
         skill_id=skill_id,
@@ -44,9 +40,7 @@ def _doc(
 
 
 def _plan(docs):
-    return plan_transitions(
-        docs, _NOW, stale_days=_STALE_DAYS, archive_days=_ARCHIVE_DAYS
-    )
+    return plan_transitions(docs, _NOW, stale_days=_STALE_DAYS, archive_days=_ARCHIVE_DAYS)
 
 
 def test_pinned_never_transitions():

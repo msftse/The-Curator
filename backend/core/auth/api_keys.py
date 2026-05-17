@@ -97,9 +97,7 @@ async def _query_by_hash(api_keys: ContainerProxy, hash_hex: str) -> dict[str, A
     # the alternative would be a second container partitioned by hash, but
     # then revocation needs a two-phase write. M1 trade-off: small N, cache
     # absorbs the load.
-    async for item in api_keys.query_items(
-        query=query, parameters=params
-    ):
+    async for item in api_keys.query_items(query=query, parameters=params):
         return item
     return None
 

@@ -27,18 +27,18 @@ async with (
         name="ChatAgent",
         instructions="You are a helpful assistant.",
     )
-    
+
     # Create a new thread for the conversation
     thread = agent.get_new_thread()
-    
+
     # First turn
     result1 = await agent.run("My name is Alice", thread=thread)
     print(f"Agent: {result1.text}")
-    
+
     # Second turn - agent remembers the name
     result2 = await agent.run("What's my name?", thread=thread)
     print(f"Agent: {result2.text}")
-    
+
     # Third turn - context continues
     result3 = await agent.run("Tell me a joke about my name", thread=thread)
     print(f"Agent: {result3.text}")
@@ -95,13 +95,13 @@ async def load_and_resume(provider, agent_id: str, filepath: str):
     """Resume a previous conversation."""
     with open(filepath) as f:
         data = json.load(f)
-    
+
     # Get the existing agent
     agent = await provider.get_agent(agent_id=agent_id)
-    
+
     # Create thread with existing service thread ID
     thread = AgentThread(service_thread_id=data["service_thread_id"])
-    
+
     # Continue the conversation
     result = await agent.run("Continue our conversation", thread=thread)
     return result
@@ -166,17 +166,17 @@ async with (
         instructions="Help users find and learn about products.",
         tools=[search_database, get_item_details],
     )
-    
+
     thread = agent.get_new_thread()
-    
+
     # Turn 1: Search
     result1 = await agent.run("Search for laptops", thread=thread)
     print(f"Agent: {result1.text}")
-    
+
     # Turn 2: Follow-up (context aware)
     result2 = await agent.run("Tell me more about Item A", thread=thread)
     print(f"Agent: {result2.text}")
-    
+
     # Turn 3: Another follow-up
     result3 = await agent.run("Is it available?", thread=thread)
     print(f"Agent: {result3.text}")
@@ -195,10 +195,10 @@ async def handle_user_session(provider, user_id: str, messages: list[str]):
         name=f"Agent-{user_id}",
         instructions="You are a helpful assistant.",
     )
-    
+
     # Each user gets their own thread
     thread = agent.get_new_thread()
-    
+
     for message in messages:
         result = await agent.run(message, thread=thread)
         print(f"[{user_id}] User: {message}")

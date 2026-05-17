@@ -37,22 +37,16 @@ async def janitor_classifier_queue(
     bind(actor="system:janitor")
     cutoff = now - timedelta(
         seconds=(
-            settings.classifier_blpop_timeout_seconds
-            * settings.janitor_classifier_stale_multiplier
+            settings.classifier_blpop_timeout_seconds * settings.janitor_classifier_stale_multiplier
         )
     )
 
-    query = (
-        "SELECT * FROM c "
-        "WHERE c.classifier_status='queued' AND c.uploaded_at < @cutoff"
-    )
+    query = "SELECT * FROM c WHERE c.classifier_status='queued' AND c.uploaded_at < @cutoff"
     params = [{"name": "@cutoff", "value": cutoff.isoformat()}]
 
     scanned = 0
     requeued = 0
-    async for raw in skills.query_items(
-        query=query, parameters=params
-    ):
+    async for raw in skills.query_items(query=query, parameters=params):
         scanned += 1
         doc_id = raw.get("id")
         skill_id = raw.get("skill_id")

@@ -267,9 +267,7 @@ async def _persist_run_record(
     from backend.services import curator_review_report
 
     with contextlib.suppress(Exception):
-        await curator_review_report.persist_review_report(
-            blob, settings, record, proposals
-        )
+        await curator_review_report.persist_review_report(blob, settings, record, proposals)
 
 
 async def execute_review_pass(
@@ -329,9 +327,7 @@ async def execute_review_pass(
                 version = raw.get("version", "unknown")
                 name = raw.get("name", skill_id)
                 etag = raw.get("_etag", "")
-                bundle = await _download_bundle(
-                    blob, settings, skill_id=skill_id, version=version
-                )
+                bundle = await _download_bundle(blob, settings, skill_id=skill_id, version=version)
                 if bundle is None:
                     continue
                 md = _extract_skill_md(bundle)
@@ -512,9 +508,7 @@ async def execute_review_pass(
                             ]
                         )
                         umbrella_md = review.umbrella_skill_md.strip()
-                        umbrella_name = (
-                            review.umbrella_name or f"umbrella-{a_id}-{b_id}"
-                        )
+                        umbrella_name = review.umbrella_name or f"umbrella-{a_id}-{b_id}"
                         if umbrella_md:
                             proposal = ReviewProposal(
                                 run_id=run_id,

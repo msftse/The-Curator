@@ -40,9 +40,7 @@ def top_similar_pairs(
     for toks in tokens.values():
         df.update(set(toks))
     n_docs = max(1, len(docs))
-    idf: dict[str, float] = {
-        w: math.log((1 + n_docs) / (1 + c)) + 1 for w, c in df.items()
-    }
+    idf: dict[str, float] = {w: math.log((1 + n_docs) / (1 + c)) + 1 for w, c in df.items()}
 
     vecs: dict[str, dict[str, float]] = {}
     for k, toks in tokens.items():

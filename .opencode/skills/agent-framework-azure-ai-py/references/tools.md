@@ -22,7 +22,7 @@ async with (
         instructions="You can write and execute Python code to solve problems.",
         tools=HostedCodeInterpreterTool(),
     )
-    
+
     result = await agent.run("Calculate the factorial of 20 using Python")
     print(result.text)
 ```
@@ -78,25 +78,25 @@ async with (
         file_path=Path("data/knowledge_base.txt"),
         purpose="agents"
     )
-    
+
     # Create vector store from file
     vector_store = await agents_client.vector_stores.create_and_poll(
         file_ids=[file.id],
         name="my_knowledge_store"
     )
-    
+
     # Create file search tool with vector store
     file_search_tool = HostedFileSearchTool(
         inputs=[HostedVectorStoreContent(vector_store_id=vector_store.id)],
         max_results=10,  # Optional: limit search results
     )
-    
+
     agent = await provider.create_agent(
         name="ResearchAgent",
         instructions="Search the knowledge base to answer questions accurately.",
         tools=file_search_tool,
     )
-    
+
     result = await agent.run("What are the key findings in the document?")
     print(result.text)
 ```
@@ -149,7 +149,7 @@ async with (
             description="Search the web for current information",
         ),
     )
-    
+
     result = await agent.run("What are the latest developments in AI?")
     print(result.text)
 ```
@@ -226,7 +226,7 @@ async with (
         file_ids=[uploaded_file.id],
         name="docs_store"
     )
-    
+
     agent = await provider.create_agent(
         name="SuperAgent",
         instructions="""You are a versatile assistant with multiple capabilities:
@@ -234,7 +234,7 @@ async with (
         - Search internal documents for company information
         - Search the web for current external information
         - Provide current date when needed
-        
+
         Choose the appropriate tool based on the user's question.""",
         tools=[
             get_current_date,  # Function tool

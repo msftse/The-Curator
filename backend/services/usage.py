@@ -106,30 +106,21 @@ async def recompute_loaders_30d(
     """Count distinct loader_ids for a skill within the last `window_days`."""
     cutoff = now - timedelta(days=window_days)
     seen: set[str] = set()
-    query = (
-        "SELECT c.loader_id FROM c "
-        "WHERE c.skill_id=@id AND c.at >= @cutoff"
-    )
+    query = "SELECT c.loader_id FROM c WHERE c.skill_id=@id AND c.at >= @cutoff"
     params = [
         {"name": "@id", "value": skill_id},
         {"name": "@cutoff", "value": cutoff.isoformat()},
     ]
-    async for row in usage.query_items(
-        query=query, parameters=params, partition_key=skill_id
-    ):
+    async for row in usage.query_items(query=query, parameters=params, partition_key=skill_id):
         lid = row.get("loader_id")
         if lid:
             seen.add(lid)
     return len(seen)
 
 
-async def _load_latest_id(
-    skills: ContainerProxy, skill_id: str
-) -> tuple[str, str] | None:
+async def _load_latest_id(skills: ContainerProxy, skill_id: str) -> tuple[str, str] | None:
     query = "SELECT c.id, c.status FROM c WHERE c.skill_id=@id ORDER BY c.uploaded_at DESC"
     params = [{"name": "@id", "value": skill_id}]
-    async for row in skills.query_items(
-        query=query, parameters=params, partition_key=skill_id
-    ):
+    async for row in skills.query_items(query=query, parameters=params, partition_key=skill_id):
         return row["id"], row.get("status", "pending")
     return None

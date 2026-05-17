@@ -75,9 +75,7 @@ async def revoke(
 
 async def list_keys(*, api_keys: ContainerProxy) -> list[ApiKeyListItem]:
     out: list[ApiKeyListItem] = []
-    async for item in api_keys.query_items(
-        query="SELECT * FROM c"
-    ):
+    async for item in api_keys.query_items(query="SELECT * FROM c"):
         doc = ApiKeyDoc.model_validate(item)
         out.append(
             ApiKeyListItem(
