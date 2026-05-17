@@ -1,40 +1,69 @@
 "use client";
 
+import { useState } from "react";
+
+import { DownloadDialog } from "./DownloadDialog";
 import { api } from "@/lib/api/client";
 
 /**
- * Download button — anchor that lets the browser follow the 307 redirect
- * to a signed Azure Blob SAS URL.
+ * Catalog "Download" entry point — opens a dialog that gives the user a
+ * pasteable agent prompt plus a fallback signed-URL download.
  *
- * Side-effect: fires `POST /v1/skills/{id}/usage` with `loader_id =
- * "web-ui:<email>"` so the curator's 30/90-day staleness counters reflect
- * human exploration alongside agent loads. Fire-and-forget; errors are
- * logged and swallowed so a flaky usage call NEVER blocks the download.
+ * Why a dialog (and not a plain anchor):
+ *   1. The `/v1/skills/{id}/download_url` endpoint is auth-gated; a plain
+ *      `<a href>` to it can't attach the bearer token, so we have to fetch
+ *      the SAS URL via the typed API client first.
+ *   2. The primary affordance is "Copy prompt" — a one-shot instruction
+ *      the user pastes into Hermes / Openclaw /Claude Code / Cursor / Copilot
+ *      Chat. Surfacing that next to a Download fallback is the whole job
+ *      of this dialog.
  *
- * We deliberately do NOT call `event.preventDefault()` — the anchor must
- * navigate even while the usage POST is in flight.
+ * The actual SAS fetch + clipboard interaction live in `DownloadDialog`.
  */
-export function DownloadButton({ skillId }: { skillId: string }) {
-  const onClick = () => {
-    const email =
-      typeof window !== "undefined"
-        ? (window.localStorage.getItem("x-user-email") ?? "anon@org")
-        : "anon@org";
-    void api.catalog
-      .reportUsage(skillId, { loader_id: `web-ui:${email}` })
-      .catch((err) => {
-        // eslint-disable-next-line no-console
-        console.warn("usage event failed (ignored)", err);
-      });
-  };
+export function DownloadButton({
+  skillId,
+  skillName,
+  uploader,
+  version,
+  category,
+  description,
+  tags,
+}: {
+  skillId: string;
+  skillName: string;
+  uploader: string;
+  version: string;
+  category: string | null;
+  description: string;
+  tags: string[];
+}) {
+  const [open, setOpen] = useState(false);
 
   return (
-    <a
-      href={api.catalog.downloadUrl(skillId)}
-      onClick={onClick}
-      className="ms-btn-primary"
-    >
-      Download tar.gz
-    </a>
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="ms-btn-primary"
+      >
+        Use this skill
+      </button>
+      <DownloadDialog
+        open={open}
+        skillId={skillId}
+        skillName={skillName}
+        uploader={uploader}
+        version={version}
+        category={category}
+        description={description}
+        tags={tags}
+        onClose={() => setOpen(false)}
+      />
+    </>
   );
 }
+
+// Keep the prior URL-builder export around so any non-React caller (tests,
+// imperative code) can still ask for the *raw* legacy 307 endpoint.
+export const legacyDownloadHref = (skillId: string): string =>
+  api.catalog.downloadUrl(skillId);

@@ -78,7 +78,15 @@ export function SkillDetailHeader({ skill }: { skill: SkillDetail }) {
 
         <div className="flex shrink-0 flex-col items-end gap-2">
           {hasBundle ? (
-            <DownloadButton skillId={skill.skill_id} />
+            <DownloadButton
+              skillId={skill.skill_id}
+              skillName={skill.name}
+              uploader={skill.uploader}
+              version={skill.version}
+              category={effectiveCategory}
+              description={description}
+              tags={effectiveTags}
+            />
           ) : (
             <span className="rounded bg-bg-2 px-3 py-1.5 text-xs text-muted">
               Bundle not yet packaged

@@ -225,6 +225,16 @@ export const api = {
     downloadUrl(skillId: string): string {
       return `${BASE()}/v1/skills/${skillId}/download`;
     },
+    /** Fetch a SAS URL for the bundle. The SPA navigates to `.url` to
+     * trigger the download — the SAS itself is the capability, no bearer
+     * token needed on the actual download request. */
+    getDownloadUrl(
+      skillId: string,
+    ): Promise<{ url: string; expires_at: string }> {
+      return call<{ url: string; expires_at: string }>(
+        `/v1/skills/${skillId}/download_url`,
+      );
+    },
     reportUsage(skillId: string, body: UsageEventBody): Promise<void> {
       return call<void>(`/v1/skills/${skillId}/usage`, {
         method: "POST",

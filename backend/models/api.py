@@ -48,6 +48,18 @@ class SkillDetail(SkillListItem):
     skill_md_text: str = ""
 
 
+class DownloadUrlResponse(BaseModel):
+    """Short-lived SAS URL for a published bundle.
+
+    The URL itself is the capability — once issued, the browser hits Azure
+    Blob directly (no further auth via the hub). Default TTL is 15 minutes
+    (see `backend.core.blob.signed_download_url`).
+    """
+
+    url: str
+    expires_at: datetime
+
+
 class RejectRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=2000)
 

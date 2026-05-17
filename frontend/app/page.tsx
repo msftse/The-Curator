@@ -1,9 +1,12 @@
 import Link from "next/link";
 
+import { HubAtAGlance } from "@/components/home/HubAtAGlance";
+
 export default function HomePage() {
   return (
     <>
       <Hero />
+      <HubAtAGlance />
       <WhatWeDo />
       <BrowseCatalog />
     </>

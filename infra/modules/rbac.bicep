@@ -5,12 +5,15 @@
 //   frontend         — no Azure data-plane access. All reads go through
 //                      the backend. (No assignments.)
 //   backend          — KV Secrets User, Cosmos Data Contributor,
-//                      Blob Data Contributor (full system-of-record access).
+//                      Blob Data Contributor, Blob Delegator (mints
+//                      user-delegation SAS for catalog downloads).
 //   classifier       — KV Secrets User (Foundry key), Cosmos Data Contributor,
 //                      Blob Data Contributor (reads bundles, writes
 //                      classification metadata).
 //   curator          — KV Secrets User, Cosmos Data Contributor,
-//                      Blob Data Contributor (snapshots, archives, restore).
+//                      Blob Data Contributor, Blob Delegator (snapshot +
+//                      restore flows mint signed URLs identically to
+//                      the backend's catalog path).
 //   backend-k8s-jobs — no Azure RBAC. Permissions are K8s-side (Role /
 //                      RoleBinding in the helm chart, scoped to
 //                      `create jobs` on the `curator-ondemand` CronJob
@@ -45,6 +48,12 @@ param assignCosmosDataPlane bool = false
 // Built-in role definition IDs (subscription-scoped).
 var kvSecretsUserRoleId = '4633458b-17de-9032-9817-3b16e3a85e6a'  // Key Vault Secrets User
 var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
+// Storage Blob Delegator — grants `generateUserDelegationKey/action`, the
+// permission required to mint user-delegation SAS tokens. Data Contributor
+// alone does NOT include this action. Required by:
+//   - backend GET /v1/skills/{id}/download_url  (signed catalog downloads)
+//   - curator snapshot + restore code paths in backend/core/blob.py
+var storageBlobDelegatorRoleId = 'db58b8e5-c6ad-4a2a-8342-4190687cbf4a'  // Storage Blob Delegator
 
 resource kv 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
   name: keyVaultName
@@ -91,6 +100,22 @@ resource blobAssignments 'Microsoft.Authorization/roleAssignments@2022-04-01' = 
   properties: {
     principalId: c.principalId
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataContributorRoleId)
+    principalType: 'ServicePrincipal'
+  }
+}]
+
+// Storage Blob Delegator — separate from Data Contributor (the latter
+// covers only data operations, NOT the `generateUserDelegationKey/action`
+// control-plane verb required to mint user-delegation SAS). All three
+// data-plane components get it: backend (catalog downloads), classifier
+// (no user it would mint SAS for today, but harmless and consistent),
+// curator (snapshot + restore signed URLs).
+resource blobDelegatorAssignments 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for c in dataPlaneComponents: {
+  name: guid(storage.id, c.principalId, 'blob-delegator')
+  scope: storage
+  properties: {
+    principalId: c.principalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDelegatorRoleId)
     principalType: 'ServicePrincipal'
   }
 }]

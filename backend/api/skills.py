@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import logging
+from datetime import UTC, datetime, timedelta
+
 from azure.cosmos.aio import ContainerProxy
 from azure.storage.blob.aio import BlobServiceClient
 from fastapi import APIRouter, Depends
@@ -20,12 +23,14 @@ from backend.core.deps import (
     settings_dep,
 )
 from backend.core.errors import NotImplementedM0, SkillNotFound
-from backend.models.api import SkillDetail, SkillListItem
+from backend.models.api import DownloadUrlResponse, SkillDetail, SkillListItem
 from backend.models.curator import UsageEvent, UsageEventDoc
 from backend.services import catalog as catalog_svc
 from backend.services import usage as usage_svc
 
 _require_usage_write = require_scope("usage:write")
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/skills", tags=["catalog"])
 
@@ -73,6 +78,61 @@ async def get_skill(
         user_tags=list(doc.user_tags),
         skill_md_text=doc.skill_md_text,
     )
+
+
+@router.get("/{skill_id}/download_url", response_model=DownloadUrlResponse)
+async def get_download_url(
+    skill_id: str,
+    _principal: Principal = Depends(get_principal),
+    settings: Settings = Depends(settings_dep),
+    skills: ContainerProxy = Depends(get_skills_container),
+    redis: Redis = Depends(get_redis_client),
+    blob: BlobServiceClient = Depends(get_blob),
+) -> DownloadUrlResponse:
+    """Return a short-lived SAS URL for the bundle, plus its expiry.
+
+    Used by the SPA: the browser cannot attach the bearer token to a
+    navigation/anchor download, so the SPA fetches the URL here (auth'd)
+    and then sets `window.location` to the SAS. The SAS itself is the
+    capability presented to Azure Blob.
+
+    Default TTL is 15 minutes (see `signed_download_url`).
+    """
+    doc = await catalog_svc.get_skill(
+        skill_id=skill_id,
+        skills=skills,
+        redis=redis,
+        settings=settings,
+    )
+    if doc is None or doc.bundle is None or doc.status != "approved":
+        raise SkillNotFound(f"skill {skill_id!r} not approved or has no bundle")
+    try:
+        url = await signed_download_url(blob, settings, skill_id=skill_id, version=doc.version)
+    except Exception as exc:  # noqa: BLE001
+        # Surface the underlying SAS-generation failure as a structured
+        # 500 rather than letting FastAPI swallow it into an opaque
+        # "Internal Server Error". Azurite vs. user-delegation-key edge
+        # cases are common; the message is diagnostic, not user-facing.
+        log.exception(
+            "signed_download_url failed for skill_id=%s version=%s",
+            skill_id,
+            doc.version,
+        )
+        from backend.core.errors import DomainError
+
+        class _DownloadUrlError(DomainError):
+            error_code = "DOWNLOAD_URL_GENERATION_FAILED"
+            http_status = 500
+
+        raise _DownloadUrlError(
+            f"could not mint signed URL: {exc.__class__.__name__}: {exc}",
+            metadata={"skill_id": skill_id, "version": doc.version},
+        ) from exc
+    # `signed_download_url` defaults to TTL=15min; mirror that here. If the
+    # helper signature ever exposes the expiry, prefer threading it through
+    # over recomputing.
+    expires_at = datetime.now(UTC) + timedelta(minutes=15)
+    return DownloadUrlResponse(url=url, expires_at=expires_at)
 
 
 @router.get("/{skill_id}/download")
