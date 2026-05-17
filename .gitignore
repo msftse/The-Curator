@@ -21,6 +21,7 @@ out/
 .env
 .env.local
 .env.*.local
+.azure
 
 # Emulator data
 cosmos-data/
