@@ -330,9 +330,9 @@ The script prints three repo-level secrets to set (`AZURE_CLIENT_ID`,
 gh workflow run deploy-aks.yml -f env=dev
 ```
 
-The workflow has 4 jobs: `infra` → `images` → `helm` → `smoke`. `--atomic --wait` rolls back automatically if any Deployment never goes Ready; the smoke job runs `helm rollback` if `/health` doesn't return 200.
+The workflow has 4 jobs: `discover` → `images` → `helm` → `smoke`. `discover` reads outputs from the latest `azd provision` deployment in the RG — the workflow itself never runs Bicep. `--atomic --wait` rolls back automatically if any Deployment never goes Ready; the smoke job runs `helm rollback` if `/health` doesn't return 200.
 
-Subsequent deploys are just `gh workflow run deploy-aks.yml -f env=dev` — `azd up` is a one-shot infra step, not a per-deploy operation.
+Subsequent deploys are just `gh workflow run deploy-aks.yml -f env=dev`. Infra changes go through `azd provision` (or `azd up`) on an operator's laptop, not through this workflow.
 
 ### Tearing down
 
