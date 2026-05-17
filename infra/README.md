@@ -44,76 +44,80 @@ UAMI names: `id-skillhub-<env>-{frontend,backend,classifier,curator,backend-k8s-
 
 ## Bootstrap a new environment
 
-Run **once per environment**. The deploy workflow takes over from step 6.
+Run **once per environment**. The deploy workflow takes over from step 8.
 
-1. **Create the resource group**:
+Two-stage model: **`azd` owns infra**, **GitHub Actions `deploy-aks.yml`
+owns images + Helm.** No environment-specific values are committed to git;
+all per-env IDs come from `azd env` and flow into Bicep + Helm via
+parameters and workflow `--set` flags.
 
-   ```bash
-   az group create -n rg-skillhub-dev -l eastus
-   ```
-
-2. **Create the Entra App Registrations + admin group** (idempotent):
+1. **Provision Entra (one-time per tenant)**:
 
    ```bash
    scripts/setup-entra.sh <env> <frontend-hostname>
-   # e.g. scripts/setup-entra.sh dev skillhub-dev.example.com
+   # e.g. scripts/setup-entra.sh dev agentic-curator.com
    ```
 
-   Provisions:
+   Creates:
    - Backend API reg `skillhub-api-<env>` exposing `access_as_user`,
      identifier `api://<api-app-id>`, group claims as `SecurityGroup`.
    - Frontend SPA reg `skillhub-spa-<env>` with SPA redirect URIs
-     `https://<frontend-host>/auth/callback` + the localhost equivalent,
-     pre-authorized for the backend scope.
+     `https://<frontend-host>/auth/callback` + the localhost equivalent.
    - Security group `skillhub-admins-<env>` — admin role source.
 
-   Script prints a copy-paste block with the IDs for
-   `infra/parameters/<env>.bicepparam`.
+   Script prints a copy-paste block of `azd env set` commands for the
+   tenant/client/group IDs.
 
-3. **Set up GitHub federated credentials** so the deploy workflow can
-   `az login` without a stored client secret:
+2. **Provision infra with `azd`**:
 
    ```bash
-   scripts/setup_federated_credentials.sh <app-id> <env>
+   azd auth login
+   azd env new dev               # creates .azure/dev/
+   azd env set ENTRA_TENANT_ID <guid>
+   azd env set ENTRA_CLIENT_ID <api-app-guid>
+   azd env set ENTRA_SPA_CLIENT_ID <spa-app-guid>
+   azd env set ENTRA_GROUP_ID_ADMIN <group-oid>
+   azd env set AZURE_LOCATION eastus2
+   azd up                        # provisions everything in rg-<env>
    ```
 
-   Subject claim must be exactly
-   `repo:<org>/agentic-skill-hub:environment:<env>`.
+   `azd` reads `infra/main.parameters.json` (env-var templated) and
+   provisions ACR, AKS (Workload Identity + OIDC + AGIC), 5 UAMIs,
+   Cosmos/Redis/Storage/Key Vault, App Insights, and all RBAC.
 
-4. **Deploy infra** (first run requires `az login` from your laptop):
+   Federated credentials bind UAMIs to
+   `system:serviceaccount:skillhub:{frontend,backend,classifier,curator}`.
+
+3. **Set up CI federated credentials** for GitHub Actions:
 
    ```bash
-   az deployment group what-if -g rg-skillhub-dev \
-     -f infra/main.bicep -p infra/parameters/dev.bicepparam
-   az deployment group create -g rg-skillhub-dev \
-     -f infra/main.bicep -p infra/parameters/dev.bicepparam
+   scripts/setup_federated_credentials.sh <env>
    ```
 
-   Provisions ACR, AKS (Workload Identity + OIDC issuer + AGIC), 5 UAMIs
-   with federated credentials bound to
-   `system:serviceaccount:skillhub:{frontend,backend,classifier,curator}`,
-   Cosmos/Redis/Storage/Key Vault, and the RBAC assignments tying it all
-   together.
+   Idempotently creates UAMI `id-skillhub-<env>-github`, federates it to
+   both `environment:<env>` and `ref:refs/heads/main` subjects, and grants
+   the five role assignments the workflow needs (ACR push, AKS RBAC admin,
+   resource group reader, KV Secrets Officer, identity operator).
 
-5. **Seed Key Vault secrets** that can't be auto-generated:
+4. **Seed Key Vault secrets** that can't be auto-generated:
 
    ```bash
-   az keyvault secret set --vault-name kv-skillhub-dev-eastus2 \
+   az keyvault secret set --vault-name kv-skillhub-<env>-<region> \
      --name apikey-pepper --value "$(openssl rand -hex 32)"
    # Foundry key for the classifier/curator (if review enabled):
-   az keyvault secret set --vault-name kv-skillhub-dev-eastus2 \
+   az keyvault secret set --vault-name kv-skillhub-<env>-<region> \
      --name foundry-api-key --value <key>
    ```
 
    The SPA is a public client (MSAL PKCE) and the backend validates JWTs
-   via JWKS, so there is no `entra-client-secret` to seed.
+   via JWKS, so there is no `entra-client-secret` to seed. Secrets reach
+   pods via the CSI Secrets Store driver, mirrored into K8s Secrets via
+   `secretObjects:` in each component's `SecretProviderClass`.
 
-   Cosmos/Redis/Storage keys are populated by the `rotate-key.yml` workflow.
-
-6. **Install KEDA on the cluster** (one-time, per cluster):
+5. **Install KEDA on the cluster** (one-time, per cluster):
 
    ```bash
-   az aks get-credentials -g rg-skillhub-dev -n aks-skillhub-dev-eastus \
+   az aks get-credentials -g rg-<env> -n skillhub-<env>-<region>-aks \
      --overwrite-existing
    helm repo add kedacore https://kedacore.github.io/charts
    helm install keda kedacore/keda --namespace keda --create-namespace
@@ -122,19 +126,36 @@ Run **once per environment**. The deploy workflow takes over from step 6.
    KEDA is not bundled in the umbrella chart so cluster operators can
    upgrade it independently.
 
-7. **Set per-environment ingress hosts** in the GitHub Environment
-   (`Settings → Environments → dev/staging/prod`):
+6. **Set GitHub repo + environment config**:
 
-   - `vars.FRONTEND_HOST` = `skillhub-dev.example.com`
-   - `vars.BACKEND_HOST`  = `api.skillhub-dev.example.com`
+   Repo secrets (`Settings → Secrets and variables → Actions`):
+   - `AZURE_CLIENT_ID` = CI UAMI client ID (printed by step 3)
+   - `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
 
-   These are chart-time inputs, not Bicep outputs.
+   Environment vars (`Settings → Environments → dev/staging/prod`):
+   - `vars.FRONTEND_HOST` = `agentic-curator.com`
+   - `vars.BACKEND_HOST`  = `api.agentic-curator.com`
+
+   These hostnames are chart-time inputs, not Bicep outputs.
+
+7. **Point DNS** at the AGW public IP:
+
+   ```bash
+   az network public-ip list -g MC_rg-<env>_skillhub-<env>-<region>-aks_<region> \
+     --query "[?starts_with(name,'skillhub')].ipAddress" -o tsv
+   ```
+
+   Create A records for `FRONTEND_HOST` and `BACKEND_HOST` → that IP.
 
 8. **First deploy via GitHub Actions**:
 
    ```bash
    gh workflow run deploy-aks.yml -f env=dev
    ```
+
+   The workflow reads Bicep outputs (UAMI client IDs, ACR login server,
+   KV name, blob URL, Redis host, Entra scope, App Insights connection
+   string) and stitches them into `helm upgrade --install --atomic --wait`.
 
 ---
 

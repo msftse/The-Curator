@@ -73,6 +73,23 @@ Workload identity client id for a component. Errors loudly if missing.
 {{- end -}}
 
 {{/*
+Workload identity principal (object) id for a component. Used as the
+Redis Entra username (the principal OID is the Entra ACL identity), as
+the Cosmos data-plane RBAC subject, and as the Blob delegator. Errors
+loudly if missing for non-frontend components — the frontend never
+authenticates to Azure data planes.
+
+Call as: `{{ include "skillhub.wiPrincipalId" (dict "Values" .Values "component" "backend") }}`
+*/}}
+{{- define "skillhub.wiPrincipalId" -}}
+{{- $oid := index .Values.global.workloadIdentityObjectIds .component -}}
+{{- if not $oid -}}
+  {{- fail (printf "global.workloadIdentityObjectIds.%s is required (set from infra/main.bicep output)" .component) -}}
+{{- end -}}
+{{- $oid -}}
+{{- end -}}
+
+{{/*
 Standard pod securityContext block. Applied to every workload.
 */}}
 {{- define "skillhub.podSecurityContext" -}}

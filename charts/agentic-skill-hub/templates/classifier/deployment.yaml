@@ -36,6 +36,8 @@ spec:
           # No ports — the classifier is a queue consumer, not an HTTP server.
           env:
             {{- include "skillhub.envFromMap" .Values.classifier.env | nindent 12 }}
+            - name: REDIS_ENTRA_USERNAME
+              value: {{ include "skillhub.wiPrincipalId" (dict "Values" .Values "component" "classifier") | quote }}
             {{- if .Values.keyVault.secrets.classifier }}
             - name: AZURE_AI_FOUNDRY_API_KEY
               valueFrom:

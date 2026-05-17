@@ -216,11 +216,14 @@ keyVault:
   name: ""                  # <prefix>-kv
   tenantId: ""              # same as global.azureTenantId
   # Per-component secret lists. Names match the KV secret names. The CSI
-  # driver mounts each as a file under /mnt/secrets-store/.
+  # driver mounts each as a file under /mnt/secrets-store/ AND mirrors it
+  # to a K8s Secret named `<componentName>-<kvSecretName>` so deployments
+  # can `valueFrom: secretKeyRef` to expose them as env vars.
   secrets:
-    backend: []             # e.g. ["apikey-pepper"]
+    backend:
+      - "apikey-pepper"        # mounted, then exposed as APIKEY_PEPPER env var
     classifier:
-      - "foundry-api-key"   # mounted, then exposed as AZURE_AI_FOUNDRY_API_KEY env var
+      - "foundry-api-key"      # mounted, then exposed as AZURE_AI_FOUNDRY_API_KEY env var
     curator:
       - "foundry-api-key"
 

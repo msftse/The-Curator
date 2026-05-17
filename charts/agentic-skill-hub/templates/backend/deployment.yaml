@@ -38,6 +38,24 @@ spec:
               protocol: TCP
           env:
             {{- include "skillhub.envFromMap" .Values.backend.env | nindent 12 }}
+            # REDIS_ENTRA_USERNAME is the backend UAMI's principal OID —
+            # Redis ACL identifies callers by OID, not client id. Computed
+            # here (not in values.yaml) so the chart never has to repeat
+            # the same id it already gets from the workflow's --set.
+            - name: REDIS_ENTRA_USERNAME
+              value: {{ include "skillhub.wiPrincipalId" (dict "Values" .Values "component" "backend") | quote }}
+            # APIKEY_PEPPER mirrored from Key Vault via the SecretProviderClass
+            # (templates/backend/secretproviderclass.yaml). The K8s Secret is
+            # only populated once a pod with the SPC volume mount starts, so
+            # the mount + this env var are both gated on
+            # `keyVault.secrets.backend` being non-empty.
+            {{- if has "apikey-pepper" .Values.keyVault.secrets.backend }}
+            - name: APIKEY_PEPPER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ printf "%s-apikey-pepper" (include "skillhub.componentName" $ctx) }}
+                  key: apikey-pepper
+            {{- end }}
             # AZURE_AI_FOUNDRY_API_KEY is NOT injected for the backend today
             # (only classifier + curator hit Foundry). Add a valueFrom block
             # here if that changes.

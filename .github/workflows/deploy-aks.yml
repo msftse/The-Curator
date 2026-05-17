@@ -87,6 +87,15 @@ jobs:
       classifierObjectId:    ${{ steps.outs.outputs.classifierObjectId }}
       curatorObjectId:       ${{ steps.outs.outputs.curatorObjectId }}
       keyVaultName:          ${{ steps.outs.outputs.keyVaultName }}
+      cosmosEndpoint:        ${{ steps.outs.outputs.cosmosEndpoint }}
+      cosmosDbName:          ${{ steps.outs.outputs.cosmosDbName }}
+      blobAccountUrl:        ${{ steps.outs.outputs.blobAccountUrl }}
+      redisHost:             ${{ steps.outs.outputs.redisHost }}
+      appInsightsConn:       ${{ steps.outs.outputs.appInsightsConn }}
+      entraClientId:         ${{ steps.outs.outputs.entraClientId }}
+      entraSpaClientId:      ${{ steps.outs.outputs.entraSpaClientId }}
+      entraGroupIdAdmin:     ${{ steps.outs.outputs.entraGroupIdAdmin }}
+      entraApiScope:         ${{ steps.outs.outputs.entraApiScope }}
       frontendHost:          ${{ steps.outs.outputs.frontendHost }}
       backendHost:           ${{ steps.outs.outputs.backendHost }}
     env:
@@ -131,9 +140,11 @@ jobs:
           BACKEND_HOST:  ${{ vars.BACKEND_HOST }}
         run: |
           OUTS=$(jq -r '.properties.outputs' deployment.json)
+          # Identity + cluster
           echo "acrLoginServer=$(echo "$OUTS"        | jq -r '.acrLoginServer.value')"        >> "$GITHUB_OUTPUT"
           echo "aksName=$(echo "$OUTS"               | jq -r '.clusterName.value')"           >> "$GITHUB_OUTPUT"
           echo "tenantId=$(echo "$OUTS"              | jq -r '.entraTenantId.value // empty')" >> "$GITHUB_OUTPUT"
+          # UAMI client + principal IDs
           echo "frontendClientId=$(echo "$OUTS"      | jq -r '.frontendUamiClientId.value')"   >> "$GITHUB_OUTPUT"
           echo "backendClientId=$(echo "$OUTS"       | jq -r '.backendUamiClientId.value')"    >> "$GITHUB_OUTPUT"
           echo "classifierClientId=$(echo "$OUTS"    | jq -r '.classifierUamiClientId.value')" >> "$GITHUB_OUTPUT"
@@ -142,7 +153,25 @@ jobs:
           echo "backendObjectId=$(echo "$OUTS"       | jq -r '.backendUamiPrincipalId.value // empty')"    >> "$GITHUB_OUTPUT"
           echo "classifierObjectId=$(echo "$OUTS"    | jq -r '.classifierUamiPrincipalId.value // empty')" >> "$GITHUB_OUTPUT"
           echo "curatorObjectId=$(echo "$OUTS"       | jq -r '.curatorUamiPrincipalId.value // empty')"    >> "$GITHUB_OUTPUT"
+          # Data-plane endpoints
           echo "keyVaultName=$(echo "$OUTS"          | jq -r '.keyVaultName.value // empty')"  >> "$GITHUB_OUTPUT"
+          echo "cosmosEndpoint=$(echo "$OUTS"        | jq -r '.cosmosEndpoint.value // empty')" >> "$GITHUB_OUTPUT"
+          echo "cosmosDbName=$(echo "$OUTS"          | jq -r '.cosmosDbName.value // empty')"   >> "$GITHUB_OUTPUT"
+          echo "blobAccountUrl=$(echo "$OUTS"        | jq -r '.blobAccountUrl.value // empty')" >> "$GITHUB_OUTPUT"
+          echo "redisHost=$(echo "$OUTS"             | jq -r '.redisHost.value // empty')"      >> "$GITHUB_OUTPUT"
+          # App Insights conn string contains semicolons + `=` — base64-encode for safe transit through GITHUB_OUTPUT.
+          # Decoded back to a plain string at --set time below.
+          {
+            echo "appInsightsConn<<EOF"
+            echo "$OUTS" | jq -r '.appInsightsConnectionString.value // empty'
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          # Entra (public coordinates)
+          echo "entraClientId=$(echo "$OUTS"         | jq -r '.entraClientId.value // empty')"    >> "$GITHUB_OUTPUT"
+          echo "entraSpaClientId=$(echo "$OUTS"      | jq -r '.entraSpaClientId.value // empty')" >> "$GITHUB_OUTPUT"
+          echo "entraGroupIdAdmin=$(echo "$OUTS"     | jq -r '.entraGroupIdAdmin.value // empty')" >> "$GITHUB_OUTPUT"
+          echo "entraApiScope=$(echo "$OUTS"         | jq -r '.entraApiScope.value // empty')"    >> "$GITHUB_OUTPUT"
+          # Hostnames (GH env vars)
           echo "frontendHost=${FRONTEND_HOST}"                                                  >> "$GITHUB_OUTPUT"
           echo "backendHost=${BACKEND_HOST}"                                                    >> "$GITHUB_OUTPUT"
 
@@ -236,6 +265,11 @@ jobs:
 
       - name: Helm upgrade --install
         run: |
+          # Wire every per-env coordinate from the infra outputs. Anything
+          # secret stays in Key Vault and is mounted by the SecretProviderClass
+          # (configured in values.yaml `keyVault.secrets.*`). Anything that's
+          # a discoverable identifier (URLs, IDs, OIDs) flows through here
+          # so values-*.yaml in git stays environment-agnostic.
           helm upgrade --install skillhub charts/agentic-skill-hub \
             --namespace skillhub --create-namespace \
             --values charts/agentic-skill-hub/values-${ENV}.yaml \
@@ -254,6 +288,29 @@ jobs:
             --set keyVault.tenantId="${{ needs.infra.outputs.tenantId }}" \
             --set ingress.hosts.frontend="${{ needs.infra.outputs.frontendHost }}" \
             --set ingress.hosts.backend="${{ needs.infra.outputs.backendHost }}" \
+            --set backend.env.ENTRA_TENANT_ID="${{ needs.infra.outputs.tenantId }}" \
+            --set backend.env.ENTRA_CLIENT_ID="${{ needs.infra.outputs.entraClientId }}" \
+            --set backend.env.ENTRA_GROUP_ID_ADMIN="${{ needs.infra.outputs.entraGroupIdAdmin }}" \
+            --set backend.env.COSMOS_ENDPOINT="${{ needs.infra.outputs.cosmosEndpoint }}" \
+            --set backend.env.COSMOS_DB_NAME="${{ needs.infra.outputs.cosmosDbName }}" \
+            --set backend.env.BLOB_ACCOUNT_URL="${{ needs.infra.outputs.blobAccountUrl }}" \
+            --set backend.env.REDIS_HOST="${{ needs.infra.outputs.redisHost }}" \
+            --set backend.env.CORS_ORIGINS="https://${{ needs.infra.outputs.frontendHost }}" \
+            --set-string backend.env.APPINSIGHTS_CONNECTION_STRING="${{ needs.infra.outputs.appInsightsConn }}" \
+            --set classifier.env.COSMOS_ENDPOINT="${{ needs.infra.outputs.cosmosEndpoint }}" \
+            --set classifier.env.COSMOS_DB_NAME="${{ needs.infra.outputs.cosmosDbName }}" \
+            --set classifier.env.BLOB_ACCOUNT_URL="${{ needs.infra.outputs.blobAccountUrl }}" \
+            --set classifier.env.REDIS_HOST="${{ needs.infra.outputs.redisHost }}" \
+            --set-string classifier.env.APPINSIGHTS_CONNECTION_STRING="${{ needs.infra.outputs.appInsightsConn }}" \
+            --set curator.env.COSMOS_ENDPOINT="${{ needs.infra.outputs.cosmosEndpoint }}" \
+            --set curator.env.COSMOS_DB_NAME="${{ needs.infra.outputs.cosmosDbName }}" \
+            --set curator.env.BLOB_ACCOUNT_URL="${{ needs.infra.outputs.blobAccountUrl }}" \
+            --set curator.env.REDIS_HOST="${{ needs.infra.outputs.redisHost }}" \
+            --set-string curator.env.APPINSIGHTS_CONNECTION_STRING="${{ needs.infra.outputs.appInsightsConn }}" \
+            --set frontend.env.ENTRA_TENANT_ID="${{ needs.infra.outputs.tenantId }}" \
+            --set frontend.env.ENTRA_CLIENT_ID="${{ needs.infra.outputs.entraSpaClientId }}" \
+            --set frontend.env.ENTRA_API_SCOPE="${{ needs.infra.outputs.entraApiScope }}" \
+            --set frontend.env.API_BASE="https://${{ needs.infra.outputs.backendHost }}" \
             --atomic --wait --timeout=10m
 
   # -----------------------------------------------------------------------

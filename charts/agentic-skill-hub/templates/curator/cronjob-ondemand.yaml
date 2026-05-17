@@ -71,6 +71,8 @@ spec:
                 - "--once"
               env:
                 {{- include "skillhub.envFromMap" .Values.curator.env | nindent 16 }}
+                - name: REDIS_ENTRA_USERNAME
+                  value: {{ include "skillhub.wiPrincipalId" (dict "Values" .Values "component" "curator") | quote }}
                 {{- if .Values.keyVault.secrets.curator }}
                 - name: AZURE_AI_FOUNDRY_API_KEY
                   valueFrom:

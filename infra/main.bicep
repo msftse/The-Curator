@@ -221,6 +221,9 @@ output cosmosAccount string = cosmos.outputs.accountName
 output cosmosEndpoint string = cosmos.outputs.endpoint
 output cosmosDbName string = cosmos.outputs.databaseName
 output storageAccount string = storage.outputs.accountName
+output blobAccountUrl string = storage.outputs.blobEndpoint
+output redisHost string = redis.outputs.hostName
+output redisSslPort int = redis.outputs.sslPort
 output appInsightsConnectionString string = deployAll ? appi!.outputs.connectionString : ''
 
 // Per-component UAMI client IDs — fed into the Helm chart as
@@ -246,3 +249,8 @@ output entraTenantId string = entraTenantId
 output entraClientId string = entraClientId
 output entraSpaClientId string = entraSpaClientId
 output entraGroupIdAdmin string = entraGroupIdAdmin
+// Derived scope name. The setup-entra.sh script always exposes the backend
+// API scope as `access_as_user` via the app-id-uri form `api://{client-id}`
+// (required by some tenant policies). Render it here so the chart values
+// don't have to compose strings.
+output entraApiScope string = empty(entraClientId) ? '' : 'api://${entraClientId}/access_as_user'
