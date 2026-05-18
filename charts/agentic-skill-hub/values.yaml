@@ -10,7 +10,7 @@
 #   - classifier     : Deployment + KEDA ScaledObject
 #   - curator        : CronJob + suspended on-demand CronJob
 #   - keyVault       : SecretProviderClass config (per component)
-#   - ingress        : AGIC class + hostnames
+#   - ingress        : nginx class + hostnames
 #   - networkPolicy  : per-component egress allowlists
 
 global:
@@ -238,20 +238,18 @@ keyVault:
       - "foundry-api-key"
 
 # ---------------------------------------------------------------------------
-# Ingress (AGIC)
+# Ingress (ingress-nginx)
 # ---------------------------------------------------------------------------
 ingress:
   enabled: true
-  className: "azure-application-gateway"
+  # ingress-nginx is installed cluster-wide in the `ingress-nginx` namespace
+  # via `helm install ingress-nginx/ingress-nginx`. It fronts an Azure
+  # managed LoadBalancer Service.
+  className: "nginx"
   annotations:
-    # AGIC reads this via ingressClassName (set below). The legacy
-    # kubernetes.io/ingress.class annotation is intentionally omitted —
-    # K8s rejects it when its value doesn't match ingressClassName, and
-    # modern AGIC versions key off ingressClassName anyway.
-    appgw.ingress.kubernetes.io/health-probe-path: "/health"
-  # TLS — only enabled in prod. Dev/staging use HTTP-only or a self-signed
-  # cert. Prod expects the cert to be issued by the App Gateway listener
-  # against a Key Vault cert reference (configured on the BYO App Gateway).
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+  # TLS is opt-in per env. Dev/staging are HTTP-only today; prod terminates
+  # via a K8s TLS secret (cert-manager + Let's Encrypt, configured per env).
   tls:
     enabled: false
     secretName: ""

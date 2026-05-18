@@ -1,6 +1,10 @@
-# Agentic Skill Hub
+<div align="center">
+  <img src="docs/brand-icon.png" alt="Agentic Skill Hub" width="128" height="128" />
 
-Internal web platform for submitting, reviewing, publishing, and maintaining reusable agent skills.
+  # The Curator
+
+  Internal web platform for submitting, reviewing, publishing, and maintaining reusable agent skills.
+</div>
 
 **Status:** M0 POC scaffolded. Local end-to-end flow runs on emulators (zero Azure spend).
 
@@ -99,8 +103,8 @@ Storage split (full rationale in [docs/ARCHITECTURE.md §9](docs/ARCHITECTURE.md
 The contributor loop is `docker compose up` + `make` (AGENTS.md §6). **You
 do not need `kubectl`, `helm`, or an AKS cluster to develop on this
 project.** AKS, the umbrella Helm chart in `charts/agentic-skill-hub/`,
-and the four Dockerfiles are deploy concerns owned by the
-`deploy-aks.yml` workflow. Ops runbook: [`infra/README.md`](infra/README.md).
+and the four Dockerfiles are deploy concerns. Ops runbook:
+[`infra/README.md`](infra/README.md).
 
 ## Quickstart
 
@@ -189,17 +193,37 @@ make demo
 Two-stage deployment by design:
 
 1. **`azd up`** provisions the Azure footprint (AKS + ACR + Cosmos + Redis + Storage + Key Vault + UAMIs + RBAC) from Bicep.
-2. **`deploy-aks.yml`** (GitHub Actions) builds the four images, pushes them to ACR, and `helm upgrade`s the umbrella chart.
+2. **`scripts/helm-deploy-dev.sh`** builds the four images locally (or pulls them from ACR), then `helm upgrade`s the umbrella chart against the cluster.
 
-This split exists because `azure.yaml` predates the M4 move to AKS — `azd deploy` would try to push to App Service / Static Web App hosts that no longer exist. Use `azd` only for the infra lifecycle; ship application changes via GitHub Actions.
+This split exists because `azure.yaml` predates the move to AKS — `azd deploy` would try to push to App Service / Static Web App hosts that no longer exist. Use `azd` for the infra lifecycle; ship application changes via the helm script.
 
 Detailed ops runbook (rollback, image rotation, troubleshooting): [`infra/README.md`](infra/README.md).
+
+### Data-plane only (Cosmos + Storage + Redis)
+
+If you just want the storage substrate — for an ETL, a one-off script, or while you stand up an alternative runtime — `infra/main.bicep` accepts `deployScope=data` and skips AKS, ACR, Key Vault, UAMIs, RBAC, and App Insights:
+
+```bash
+az group create -n rg-data-dev -l eastus2
+az deployment group create \
+  -g rg-data-dev \
+  -f infra/main.bicep \
+  -p env=dev deployScope=data location=eastus2
+```
+
+That provisions only:
+
+- Azure Cosmos DB for NoSQL (containers `skills`, `audit`, `usage_events`)
+- Azure Storage account (blob containers `published`, `archive`, `snapshots`)
+- Azure Cache for Redis (Basic/Standard tier; AOF on the queue DB)
+
+You manage your own identity → data-plane access (e.g. assign `Cosmos Built-in Data Contributor` to the principal that needs it). The full deploy in the next section grants this automatically via Workload Identity.
 
 ### Prerequisites
 
 - Azure subscription with **Owner** on the target resource group (RBAC role assignments needed)
 - Tenant roles: **Application Administrator** + **Groups Administrator** (or Global Admin) to run `setup-entra.sh`
-- Tools: `az`, `azd`, `gh`, `helm`, `kubectl`, `jq`, `docker`
+- Tools: `az`, `azd`, `helm`, `kubectl`, `jq`, `docker`
 
 ```bash
 az login
@@ -252,8 +276,7 @@ azd env set ENTRA_SPA_CLIENT_ID  <spa-app-id>
 azd env set ENTRA_GROUP_ID_ADMIN <admin-group-id>
 ```
 
-GitHub Actions reads the same IDs from Bicep outputs at deploy time — they
-never have to be wired into the workflow separately.
+`scripts/helm-deploy-dev.sh` reads the same IDs from Bicep outputs at deploy time — they never have to be wired in separately.
 
 ### Step 3 — Provision infra (`azd up`)
 
@@ -264,7 +287,7 @@ azd up                             # runs azd provision under the hood
 `azd up` will:
 - Create resource group `rg-<env>` if missing
 - Deploy `infra/main.bicep` with `parameters/<env>.bicepparam`
-- Provision ACR, AKS (Workload Identity + OIDC issuer + AGIC), 5 UAMIs with federated credentials, Cosmos / Redis / Storage / Key Vault, all RBAC
+- Provision ACR, AKS (Workload Identity + OIDC issuer), 5 UAMIs with federated credentials, Cosmos / Redis / Storage / Key Vault, all RBAC
 
 Cosmos data-plane RBAC takes ~5min to propagate — `/health` will return 403 from Cosmos until then.
 
@@ -294,45 +317,53 @@ Secret named `<release>-<component>-<kv-secret-name>` — the deployments
 expose them as env vars via `valueFrom: secretKeyRef`. No secret value
 ever appears in a Helm release, kubectl manifest, or git.
 
-### Step 5 — Install KEDA (once per cluster)
+### Step 5 — Cluster-side bootstrap (once per cluster)
 
-KEDA is the scaler that drives the classifier worker to/from zero on `LLEN queue:classifier`. It's deliberately not bundled in the umbrella chart so cluster operators can upgrade it independently.
+Two components are installed directly on the cluster (not via the umbrella chart) so they can be upgraded independently:
 
 ```bash
 az aks get-credentials -g rg-dev -n skillhub-dev-eastus2-aks --overwrite-existing
+
+# KEDA — drives the classifier worker to/from zero on `LLEN queue:classifier`.
 helm repo add kedacore https://kedacore.github.io/charts
 helm install keda kedacore/keda --namespace keda --create-namespace
+
+# ingress-nginx — public LB ingress controller. Provisions an Azure managed
+# Load Balancer with a public IP that DNS A records should target.
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm install ingress-nginx ingress-nginx/ingress-nginx \
+  --namespace ingress-nginx --create-namespace \
+  --set controller.service.externalTrafficPolicy=Local \
+  --set controller.publishService.enabled=true
+
+# Grab the public IP — point your DNS A records at it.
+kubectl -n ingress-nginx get svc ingress-nginx-controller \
+  -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
 ```
 
-### Step 6 — Configure GitHub environment
-
-In **Settings → Environments → dev** (create the env if missing):
-
-| Variable | Value |
-|----------|-------|
-| `FRONTEND_HOST` | `agentic-curator.com` |
-| `BACKEND_HOST`  | `api.agentic-curator.com` |
-
-These are chart-time inputs (not Bicep outputs) used by `helm upgrade --set ingress.hosts.*`.
-
-Wire up GitHub federated credentials so the deploy workflow can `az login` without a stored secret. The helper script creates a dedicated CI UAMI (`id-skillhub-<env>-github`), federates it to the repo, and assigns the five roles `deploy-aks.yml` needs (Contributor on RG, AcrPush on ACR, AKS Cluster User + RBAC Cluster Admin, KV Secrets Officer):
+### Step 6 — Deploy the app (`scripts/helm-deploy-dev.sh`)
 
 ```bash
-bash scripts/setup_federated_credentials.sh dev
+# Dry-run (default) — renders the chart with values pulled from the latest azd deployment.
+bash scripts/helm-deploy-dev.sh
+
+# Actually install / upgrade.
+bash scripts/helm-deploy-dev.sh --install
 ```
 
-The script prints three repo-level secrets to set (`AZURE_CLIENT_ID`,
-`AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`). Set them via `gh secret set`.
+The script discovers the latest successful `azd provision` deployment in `rg-<env>`, reads its outputs (ACR login server, UAMI client IDs, Cosmos endpoint, etc.), and calls `helm upgrade --install skillhub charts/agentic-skill-hub` with all `--set` flags pre-wired. Hostnames default to `agentic-curator.com` / `api.agentic-curator.com`; override with `FRONTEND_HOST=… BACKEND_HOST=… bash scripts/helm-deploy-dev.sh --install`.
 
-### Step 7 — First deploy
+Image tag defaults to `git rev-parse HEAD`. Build + push first if that tag isn't already in ACR:
 
 ```bash
-gh workflow run deploy-aks.yml -f env=dev
+ACR=$(az acr list -g rg-dev --query "[0].loginServer" -o tsv)
+TAG=$(git rev-parse HEAD)
+az acr login --name "${ACR%%.*}"
+for c in frontend backend classifier curator; do
+  docker build -f Dockerfile.$c -t $ACR/skillhub-$c:$TAG .
+  docker push $ACR/skillhub-$c:$TAG
+done
 ```
-
-The workflow has 4 jobs: `discover` → `images` → `helm` → `smoke`. `discover` reads outputs from the latest `azd provision` deployment in the RG — the workflow itself never runs Bicep. `--atomic --wait` rolls back automatically if any Deployment never goes Ready; the smoke job runs `helm rollback` if `/health` doesn't return 200.
-
-Subsequent deploys are just `gh workflow run deploy-aks.yml -f env=dev`. Infra changes go through `azd provision` (or `azd up`) on an operator's laptop, not through this workflow.
 
 ### Tearing down
 

@@ -1,7 +1,7 @@
 apiVersion: v2
 name: agentic-skill-hub
 description: |
-  Umbrella chart for the Agentic Skill Hub on AKS (M4).
+  Umbrella chart for the Agentic Skill Hub on AKS.
 
   Renders four workloads — frontend (Deployment + Ingress), backend
   (Deployment + Ingress + RBAC for curator on-demand Jobs), classifier
@@ -10,8 +10,6 @@ description: |
   workload-identity ServiceAccounts; the backend additionally owns a
   narrow K8s Role granting `create jobs` on the `curator-ondemand`
   CronJob only (AGENTS.md §5 second line of defense).
-
-  See .agents/plans/m4-aks-deployment.md for the full design contract.
 type: application
 version: 0.1.0
 appVersion: "0.2.0"

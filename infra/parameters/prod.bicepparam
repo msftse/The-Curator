@@ -11,8 +11,6 @@ param entraClientId      = readEnvironmentVariable('ENTRA_CLIENT_ID', '')
 param entraSpaClientId   = readEnvironmentVariable('ENTRA_SPA_CLIENT_ID', '')
 param entraGroupIdAdmin  = readEnvironmentVariable('ENTRA_GROUP_ID_ADMIN', '')
 
-// --- M4 additions.
-
 // AAD groups granted cluster-admin via AAD integration. REQUIRED in prod
 // because `disableLocalAccounts: true` is set (no cluster-admin certificate
 // fallback). At least one group is mandatory — provision via
@@ -23,11 +21,5 @@ param aadAdminGroupObjectIds = []
 // Provision separately or via a future infra/modules/loganalytics.bicep.
 param logAnalyticsWorkspaceId = ''
 
-// BYO App Gateway for AGIC. REQUIRED in prod (the addon mode is dev/staging
-// only). Provision the App Gateway in a separate stack (cert from Key Vault,
-// WAF v2 policy, public IP, vnet integration) and reference it here.
-param agicMode = 'byo'
-param agicAppGatewayId = ''
-
-// ACR Premium SKU enables geo-replication + private endpoints (M5).
+// ACR Premium SKU enables geo-replication + private endpoints.
 param acrSku = 'Premium'

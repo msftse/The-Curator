@@ -3,9 +3,7 @@
 // cluster's kubelet identity). Per-env registries would force cross-RG
 // replication and a more expensive Premium SKU; not worth the cost yet.
 //
-// Premium SKU is still required for:
-//   - geo-replication (future, prod-only)
-//   - private endpoints (prod hardening, M5)
+// Premium SKU is required for geo-replication and private endpoints.
 // We keep `sku` parameterised so dev can run Standard.
 
 @description('Resource name prefix (e.g. skillhub-dev-eastus).')
@@ -25,7 +23,7 @@ param skuName string = 'Standard'
 @description('Object ID of the kubelet UAMI to grant AcrPull. AKS uses this identity to pull images.')
 param kubeletPrincipalId string
 
-@description('Whether to allow public access. Set false in prod after private endpoint is wired (M5).')
+@description('Whether to allow public access. Set false in prod after a private endpoint is wired.')
 param publicNetworkAccess bool = true
 
 // ACR names must be globally unique, alphanumeric, 5-50 chars. Strip dashes.

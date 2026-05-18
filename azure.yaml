@@ -2,18 +2,26 @@
 #
 # Azure Developer CLI manifest for Agentic Skill Hub.
 #
+# This project uses a two-stage deploy by design:
+#   1. `azd provision` (or `azd up`) — owns the Azure infra lifecycle.
+#   2. `scripts/helm-deploy-dev.sh` — builds + ships the four container
+#      images and `helm upgrade`s the umbrella chart in `charts/`.
+#
+# `azd deploy` is intentionally NOT supported. The app runs on AKS, not on
+# App Service or Static Web Apps, so there are no `services:` to define
+# here. Use the helm script for application changes. See README.md §
+# "Deploying to Azure" for the full flow.
+#
 # Usage:
 #   azd auth login
 #   azd env new dev              # env name MUST be one of: dev | staging | prod
 #                                # (enforced by infra/main.bicep `@allowed`)
-#   azd env set AZURE_LOCATION eastus
-#   azd env set AUTH_MODE stub   # OR oidc; if oidc, also set ENTRA_* env vars
+#   azd env set AZURE_LOCATION eastus2
+#   azd env set AUTH_MODE oidc   # then set ENTRA_* (see README.md step 2)
 #   azd provision                # spin up infra only
-#   azd deploy                   # ship api + worker + web
-#   azd up                       # both, end to end
 #
-# Post-provision, Key Vault secrets are placeholders. Seed them before the
-# App Service starts serving real traffic — see infra/README.md §5.
+# Post-provision, Key Vault secrets are placeholders. Seed them before
+# deploying the app — see README.md step 4.
 
 name: agentic-skill-hub
 metadata:
@@ -23,20 +31,3 @@ infra:
   provider: bicep
   path: infra
   module: main
-
-services:
-  api:
-    project: .
-    language: py
-    host: appservice
-
-  worker:
-    project: .
-    language: py
-    host: appservice
-
-  web:
-    project: ./frontend
-    language: ts
-    host: staticwebapp
-    dist: .next

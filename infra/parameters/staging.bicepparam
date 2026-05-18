@@ -11,8 +11,6 @@ param entraClientId      = readEnvironmentVariable('ENTRA_CLIENT_ID', '')
 param entraSpaClientId   = readEnvironmentVariable('ENTRA_SPA_CLIENT_ID', '')
 param entraGroupIdAdmin  = readEnvironmentVariable('ENTRA_GROUP_ID_ADMIN', '')
 
-// --- M4 additions.
-
 // AAD groups granted cluster-admin. Recommend the same group as
 // `entraGroupIdAdmin` for consistency between app and infra admin sets.
 param aadAdminGroupObjectIds = []

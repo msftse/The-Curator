@@ -1,4 +1,4 @@
-// Agentic Skill Hub — top-level deployment (M4: AKS).
+// Agentic Skill Hub — top-level deployment.
 //
 // Composes Cosmos, Storage, Redis, Key Vault, App Insights, ACR, AKS,
 // per-component UAMIs (frontend, backend, classifier, curator,
@@ -66,16 +66,6 @@ param acrSku string = 'Premium'
 @description('Kubernetes version. Bump as Azure deprecates; 1.30.5 became LTS-only in 2026-05.')
 param kubernetesVersion string = '1.34.7'
 
-@description('AGIC ingress mode. `addon` for dev/staging, `byo` for prod.')
-@allowed([
-  'addon'
-  'byo'
-])
-param agicMode string = env == 'prod' ? 'byo' : 'addon'
-
-@description('Existing App Gateway resource ID. Required when agicMode=byo.')
-param agicAppGatewayId string = ''
-
 @description('Cluster AAD admin group object IDs.')
 param aadAdminGroupObjectIds array = []
 
@@ -108,7 +98,7 @@ var prefix = '${env}-${location}'
 var fullPrefix = 'skillhub-${prefix}'
 var deployAll = deployScope == 'all'
 
-// --- Data plane (unchanged from M1-M3).
+// --- Data plane.
 
 module appi 'modules/appinsights.bicep' = if (deployAll) {
   name: 'appi'
@@ -156,7 +146,7 @@ module kv 'modules/keyvault.bicep' = if (deployAll) {
   }
 }
 
-// --- Runtime plane (M4: AKS + ACR + per-component UAMIs).
+// --- Runtime plane (AKS + ACR + per-component UAMIs).
 
 module aks 'modules/aks.bicep' = if (deployAll) {
   name: 'aks'
@@ -165,8 +155,6 @@ module aks 'modules/aks.bicep' = if (deployAll) {
     location: location
     env: env
     kubernetesVersion: kubernetesVersion
-    agicMode: agicMode
-    agicAppGatewayId: agicAppGatewayId
     logAnalyticsWorkspaceId: logAnalyticsWorkspaceId
     aadAdminGroupObjectIds: aadAdminGroupObjectIds
   }
@@ -179,7 +167,7 @@ module acr 'modules/acr.bicep' = if (deployAll) {
     location: location
     skuName: acrSku
     kubeletPrincipalId: aks!.outputs.kubeletPrincipalId
-    publicNetworkAccess: env != 'prod'  // tighten in M5
+    publicNetworkAccess: env != 'prod'
   }
 }
 

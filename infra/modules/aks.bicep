@@ -1,18 +1,15 @@
 // AKS cluster for the Agentic Skill Hub.
 //
-// Design choices (see .agents/plans/m4-aks-deployment.md):
+// Design choices:
 //   - Azure CNI Overlay: pods get an overlay IP, nodes get VNet IPs. Best
 //     IP density + native NetworkPolicy + private endpoint compatibility.
 //   - Managed VNet (`networkProfile.podCidr` set, no `vnetSubnetID`): AKS
-//     creates and owns the VNet/subnets. BYO VNet is an M5 hardening step.
+//     creates and owns the VNet/subnets. BYO VNet is a future hardening step.
 //   - Workload identity + OIDC issuer enabled cluster-wide. Per-component
 //     UAMIs + federated credentials are created in `identity.bicep`.
-//   - AGIC add-on for ingress. Two modes:
-//     * Add-on App Gateway (`agicMode=addon`) — AKS provisions the App
-//       Gateway from `agicSubnetCidr`. Cheap, dev/staging.
-//     * BYO App Gateway (`agicMode=byo`) — caller passes `agicAppGatewayId`
-//       pointing at an existing App Gateway. Required for prod (WAF tuning,
-//       KV cert binding).
+//   - Ingress: ingress-nginx, installed cluster-side via Helm. It fronts a
+//     Kubernetes Service of type LoadBalancer (Azure managed LB) and is
+//     not provisioned by this Bicep.
 //   - Key Vault Secrets Provider add-on: CSI driver mounts KV secrets into
 //     pods at `/mnt/secrets-store/`. Per-component SecretProviderClass
 //     manifests in the Helm chart pin which secrets each pod sees.
@@ -35,7 +32,7 @@ param env string
 @description('Kubernetes version. Pin to a known-good supported version.')
 param kubernetesVersion string = '1.30.5'
 
-@description('System pool VM SKU. 2-node baseline for AKS-managed pods (CoreDNS, metrics-server, AGIC).')
+@description('System pool VM SKU. 2-node baseline for AKS-managed pods (CoreDNS, metrics-server).')
 param systemPoolVmSize string = 'Standard_D2s_v3'
 
 @description('User pool VM SKU. Hosts application workloads.')
@@ -46,19 +43,6 @@ param userPoolMinCount int = env == 'prod' ? 2 : 1
 
 @description('User pool autoscale max count.')
 param userPoolMaxCount int = env == 'prod' ? 10 : 5
-
-@description('AGIC ingress mode. `addon` creates a new App Gateway from agicSubnetCidr; `byo` references agicAppGatewayId.')
-@allowed([
-  'addon'
-  'byo'
-])
-param agicMode string = env == 'prod' ? 'byo' : 'addon'
-
-@description('Subnet CIDR for the add-on App Gateway. Required when agicMode=addon. Must not overlap pod/service CIDRs. Azure caps AGIC + CNI Overlay subnets at /24.')
-param agicSubnetCidr string = '10.225.0.0/24'
-
-@description('Existing App Gateway resource ID. Required when agicMode=byo. Must be in the same region.')
-param agicAppGatewayId string = ''
 
 @description('Log Analytics workspace ID for Container Insights. Pass empty to skip.')
 param logAnalyticsWorkspaceId string = ''
@@ -84,7 +68,7 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-05-01' = {
     // System-assigned identity. We DO NOT use this as the workload identity
     // for app pods — that's per-component UAMIs federated via OIDC. This
     // identity is what AKS uses to manage cluster resources (load balancer,
-    // ACR pull *via kubelet*, AGIC if add-on, etc.).
+    // ACR pull *via kubelet*, etc.).
     type: 'SystemAssigned'
   }
   sku: {
@@ -164,22 +148,6 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-05-01' = {
           rotationPollInterval: '2m'
         }
       }
-      // AGIC add-on. Only enabled in `addon` mode; in `byo` mode we still
-      // enable the add-on but point it at the existing App Gateway via
-      // `applicationGatewayId`. Microsoft's docs accept either config shape.
-      ingressApplicationGateway: {
-        enabled: true
-        config: agicMode == 'addon' ? {
-          // Add-on App Gateway: AKS provisions one in this subnet CIDR.
-          subnetCIDR: agicSubnetCidr
-          applicationGatewayName: '${clusterName}-agw'
-          watchNamespace: 'skillhub'
-        } : {
-          // BYO App Gateway: caller provisioned one separately.
-          applicationGatewayId: agicAppGatewayId
-          watchNamespace: 'skillhub'
-        }
-      }
       // Container Insights (OMS agent). Optional — only wire if a workspace
       // is provided (caller passes empty string to skip).
       omsAgent: empty(logAnalyticsWorkspaceId) ? {
@@ -235,11 +203,6 @@ output clusterName string = aks.name
 output clusterFqdn string = aks.properties.fqdn
 output oidcIssuerUrl string = aks.properties.oidcIssuerProfile.issuerURL
 output systemAssignedPrincipalId string = aks.identity.principalId
-
-// AGIC operates with its own UAMI (created by the add-on). Surface its
-// principalId so the parent can grant it Contributor on the App Gateway
-// (add-on mode) or Reader on the BYO App Gateway (byo mode).
-output agicIdentityPrincipalId string = aks.properties.addonProfiles.ingressApplicationGateway.identity.objectId
 
 // CSI driver UAMI — needs Key Vault `get`/`list` on each per-env vault.
 // Currently the helm chart's SecretProviderClass uses *workload identity*

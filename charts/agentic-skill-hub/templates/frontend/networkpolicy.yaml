@@ -15,17 +15,16 @@ spec:
   policyTypes:
     - Ingress
     - Egress
-  # Ingress: only from AGIC pods (the ingress controller) and other pods in
-  # the namespace (none today, but cheap to allow). AGIC runs in
-  # `kube-system` with label `app=ingress-appgw`.
+  # Ingress: only from ingress-nginx controller pods (in `ingress-nginx`
+  # namespace).
   ingress:
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: kube-system
+              kubernetes.io/metadata.name: ingress-nginx
           podSelector:
             matchLabels:
-              app: ingress-appgw
+              app.kubernetes.io/name: ingress-nginx
       ports:
         - port: http
           protocol: TCP

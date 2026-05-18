@@ -15,15 +15,16 @@ spec:
   policyTypes:
     - Ingress
     - Egress
-  # Ingress: AGIC (kube-system) + frontend pods (in this namespace).
+  # Ingress: ingress-nginx controller (in `ingress-nginx` namespace) +
+  # frontend pods in this namespace.
   ingress:
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: kube-system
+              kubernetes.io/metadata.name: ingress-nginx
           podSelector:
             matchLabels:
-              app: ingress-appgw
+              app.kubernetes.io/name: ingress-nginx
         - podSelector:
             matchLabels:
               {{- include "skillhub.selectorLabels" (dict "component" "frontend" "Chart" .Chart "Release" .Release) | nindent 14 }}

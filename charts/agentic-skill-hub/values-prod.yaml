@@ -1,5 +1,4 @@
-# Prod overlay — BYO App Gateway, TLS terminated at the gateway (KV cert),
-# zone-redundant scheduling, larger resource ceilings.
+# Prod overlay — TLS, zone-redundant scheduling, larger resource ceilings.
 
 frontend:
   replicas: 3
@@ -49,12 +48,9 @@ curator:
       memory: 2048Mi
 
 ingress:
-  # TLS handled at the BYO App Gateway listener (cert from Key Vault). The
-  # ingress resource still needs the host names + (optionally) a TLS section
-  # for AGIC to wire the listener mapping.
   tls:
     enabled: true
-    secretName: ""    # cert lives on the App Gateway listener, not as a K8s secret
+    secretName: ""
 
 networkPolicy:
   # Tighten egress in prod. CIDRs should be the private endpoint subnets

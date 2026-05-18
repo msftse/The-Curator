@@ -69,14 +69,11 @@ helm $ACTION skillhub charts/agentic-skill-hub \
   --set keyVault.tenantId="$(v entraTenantId)" \
   --set ingress.hosts.frontend="${FRONTEND_HOST}" \
   --set ingress.hosts.backend="${BACKEND_HOST}" \
-  --set backend.env.ENTRA_TENANT_ID="$(v entraTenantId)" \
-  --set backend.env.ENTRA_CLIENT_ID="$(v entraClientId)" \
-  --set backend.env.ENTRA_GROUP_ID_ADMIN="$(v entraGroupIdAdmin)" \
   --set backend.env.COSMOS_ENDPOINT="$(v cosmosEndpoint)" \
   --set backend.env.COSMOS_DB_NAME="$(v cosmosDbName)" \
   --set backend.env.BLOB_ACCOUNT_URL="${BLOB_URL}" \
   --set backend.env.REDIS_HOST="${REDIS_HOST}" \
-  --set backend.env.CORS_ORIGINS="https://${FRONTEND_HOST}" \
+  --set backend.env.CORS_ORIGINS="http://${FRONTEND_HOST}" \
   --set-string backend.env.APPINSIGHTS_CONNECTION_STRING="$(v appInsightsConnectionString)" \
   --set classifier.env.COSMOS_ENDPOINT="$(v cosmosEndpoint)" \
   --set classifier.env.COSMOS_DB_NAME="$(v cosmosDbName)" \
@@ -88,8 +85,5 @@ helm $ACTION skillhub charts/agentic-skill-hub \
   --set curator.env.BLOB_ACCOUNT_URL="${BLOB_URL}" \
   --set curator.env.REDIS_HOST="${REDIS_HOST}" \
   --set-string curator.env.APPINSIGHTS_CONNECTION_STRING="$(v appInsightsConnectionString)" \
-  --set frontend.env.ENTRA_TENANT_ID="$(v entraTenantId)" \
-  --set frontend.env.ENTRA_CLIENT_ID="$(v entraSpaClientId)" \
-  --set frontend.env.ENTRA_API_SCOPE="${ENTRA_SCOPE}" \
-  --set frontend.env.API_BASE="https://${BACKEND_HOST}" \
+  --set frontend.env.API_BASE="http://${BACKEND_HOST}" \
   $HELM_FLAGS
