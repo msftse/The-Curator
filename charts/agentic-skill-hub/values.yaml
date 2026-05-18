@@ -234,7 +234,10 @@ ingress:
   enabled: true
   className: "azure-application-gateway"
   annotations:
-    kubernetes.io/ingress.class: azure/application-gateway
+    # AGIC reads this via ingressClassName (set below). The legacy
+    # kubernetes.io/ingress.class annotation is intentionally omitted —
+    # K8s rejects it when its value doesn't match ingressClassName, and
+    # modern AGIC versions key off ingressClassName anyway.
     appgw.ingress.kubernetes.io/health-probe-path: "/health"
   # TLS — only enabled in prod. Dev/staging use HTTP-only or a self-signed
   # cert. Prod expects the cert to be issued by the App Gateway listener

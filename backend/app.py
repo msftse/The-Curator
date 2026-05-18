@@ -135,4 +135,9 @@ def create_app() -> FastAPI:
             details=details,
         )
 
+    # `/health` alias — the K8s convention. The chart's probes and the
+    # AGIC health-probe annotation both hit `/health`, and `/healthz` is
+    # kept for backwards compatibility with the M3 docker-compose loop.
+    app.add_api_route("/health", healthz, methods=["GET"], response_model=HealthResponse)
+
     return app
