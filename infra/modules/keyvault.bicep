@@ -35,15 +35,29 @@ resource kv 'Microsoft.KeyVault/vaults@2023-07-01' = {
   }
 }
 
-// Seed secret names (values are populated post-deploy by the rotate-key workflow).
+// Seed secret names (values are populated post-deploy by the rotate-key workflow
+// or — for the Entra coordinates — by `azd provision` reading the matching
+// .bicepparam values and the rotate workflow honoring them on first run).
+//
 // No `entra-client-secret`: the SPA is a public client (MSAL PKCE redirect) and
 // the backend validates JWTs via JWKS — no confidential-client flow exists.
+//
+// The entra-* names are public coordinates (tenant id, app reg client ids,
+// security group id, API scope). They live in KV anyway so we have one
+// rotation surface for everything Entra-related and so the deploy workflow
+// doesn't have to round-trip them through GH-Actions job outputs (which
+// auto-redact any value matching a repo secret like AZURE_TENANT_ID).
 var secretNames = [
   'cosmos-key'
   'blob-connection-string'
   'redis-primary-key'
   'appinsights-connection-string'
   'apikey-pepper'
+  'entra-tenant-id'
+  'entra-client-id'           // backend API app reg
+  'entra-spa-client-id'       // frontend SPA app reg
+  'entra-group-id-admin'
+  'entra-api-scope'           // api://<api-app-id>/access_as_user
 ]
 
 resource seededSecrets 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = [for n in secretNames: {

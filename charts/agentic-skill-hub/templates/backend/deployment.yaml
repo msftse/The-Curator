@@ -56,6 +56,34 @@ spec:
                   name: {{ printf "%s-apikey-pepper" (include "skillhub.componentName" $ctx) }}
                   key: apikey-pepper
             {{- end }}
+            # Entra coordinates from KV. These override the (typically empty)
+            # same-named keys in .Values.backend.env above — K8s takes the
+            # LAST entry when an env name repeats. Backend validates Entra
+            # JWTs via JWKS, so the tenant id + audience (api app client id)
+            # + admin group id are all it needs. AGENTS.md §6a documents
+            # these as public coordinates; they live in KV for single-rotation
+            # surface and to dodge the GH-Actions step-output redaction bug.
+            {{- if has "entra-tenant-id" .Values.keyVault.secrets.backend }}
+            - name: ENTRA_TENANT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ printf "%s-entra-tenant-id" (include "skillhub.componentName" $ctx) }}
+                  key: entra-tenant-id
+            {{- end }}
+            {{- if has "entra-client-id" .Values.keyVault.secrets.backend }}
+            - name: ENTRA_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ printf "%s-entra-client-id" (include "skillhub.componentName" $ctx) }}
+                  key: entra-client-id
+            {{- end }}
+            {{- if has "entra-group-id-admin" .Values.keyVault.secrets.backend }}
+            - name: ENTRA_GROUP_ID_ADMIN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ printf "%s-entra-group-id-admin" (include "skillhub.componentName" $ctx) }}
+                  key: entra-group-id-admin
+            {{- end }}
             # AZURE_AI_FOUNDRY_API_KEY is NOT injected for the backend today
             # (only classifier + curator hit Foundry). Add a valueFrom block
             # here if that changes.

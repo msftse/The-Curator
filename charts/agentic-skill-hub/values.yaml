@@ -220,8 +220,18 @@ keyVault:
   # to a K8s Secret named `<componentName>-<kvSecretName>` so deployments
   # can `valueFrom: secretKeyRef` to expose them as env vars.
   secrets:
+    frontend:
+      # Public Entra coordinates emitted as window.__ENV__ for MSAL PKCE.
+      # The frontend UAMI is granted KV Secrets User by rbac.bicep solely
+      # to let the CSI driver mount these — no Cosmos / Blob / Redis grants.
+      - "entra-tenant-id"
+      - "entra-spa-client-id"
+      - "entra-api-scope"
     backend:
       - "apikey-pepper"        # mounted, then exposed as APIKEY_PEPPER env var
+      - "entra-tenant-id"
+      - "entra-client-id"      # API app reg client id (the audience)
+      - "entra-group-id-admin"
     classifier:
       - "foundry-api-key"      # mounted, then exposed as AZURE_AI_FOUNDRY_API_KEY env var
     curator:

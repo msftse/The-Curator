@@ -303,9 +303,6 @@ jobs:
             --set keyVault.tenantId="${{ needs.discover.outputs.tenantId }}" \
             --set ingress.hosts.frontend="${{ needs.discover.outputs.frontendHost }}" \
             --set ingress.hosts.backend="${{ needs.discover.outputs.backendHost }}" \
-            --set backend.env.ENTRA_TENANT_ID="${{ needs.discover.outputs.tenantId }}" \
-            --set backend.env.ENTRA_CLIENT_ID="${{ needs.discover.outputs.entraClientId }}" \
-            --set backend.env.ENTRA_GROUP_ID_ADMIN="${{ needs.discover.outputs.entraGroupIdAdmin }}" \
             --set backend.env.COSMOS_ENDPOINT="${{ needs.discover.outputs.cosmosEndpoint }}" \
             --set backend.env.COSMOS_DB_NAME="${{ needs.discover.outputs.cosmosDbName }}" \
             --set backend.env.BLOB_ACCOUNT_URL="${{ needs.discover.outputs.blobAccountUrl }}" \
@@ -322,9 +319,6 @@ jobs:
             --set curator.env.BLOB_ACCOUNT_URL="${{ needs.discover.outputs.blobAccountUrl }}" \
             --set curator.env.REDIS_HOST="${{ needs.discover.outputs.redisHost }}" \
             --set-string curator.env.APPINSIGHTS_CONNECTION_STRING="${{ needs.discover.outputs.appInsightsConn }}" \
-            --set frontend.env.ENTRA_TENANT_ID="${{ needs.discover.outputs.tenantId }}" \
-            --set frontend.env.ENTRA_CLIENT_ID="${{ needs.discover.outputs.entraSpaClientId }}" \
-            --set frontend.env.ENTRA_API_SCOPE="${{ needs.discover.outputs.entraApiScope }}" \
             --set frontend.env.API_BASE="https://${{ needs.discover.outputs.backendHost }}" \
             --atomic --wait --timeout=10m
 

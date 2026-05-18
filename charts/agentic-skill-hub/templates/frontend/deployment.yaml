@@ -40,6 +40,37 @@ spec:
             {{- /* Runtime env injected into the Node process; consumed by
                    `app/env.js/route.ts` to emit window.__ENV__. */ -}}
             {{- include "skillhub.envFromMap" .Values.frontend.env | nindent 12 }}
+            # Entra coordinates mirrored from Key Vault via the SPC
+            # (templates/frontend/secretproviderclass.yaml). These override
+            # any same-named keys in .Values.frontend.env above — K8s takes
+            # the LAST entry when an env name repeats. Each block is gated
+            # on the secret name appearing in `keyVault.secrets.frontend`
+            # so the chart degrades gracefully when CSI mounts are off.
+            {{- if has "entra-tenant-id" .Values.keyVault.secrets.frontend }}
+            - name: ENTRA_TENANT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ printf "%s-entra-tenant-id" (include "skillhub.componentName" $ctx) }}
+                  key: entra-tenant-id
+            {{- end }}
+            {{- if has "entra-spa-client-id" .Values.keyVault.secrets.frontend }}
+            - name: ENTRA_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ printf "%s-entra-spa-client-id" (include "skillhub.componentName" $ctx) }}
+                  key: entra-spa-client-id
+            {{- end }}
+            {{- if has "entra-api-scope" .Values.keyVault.secrets.frontend }}
+            - name: ENTRA_API_SCOPE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ printf "%s-entra-api-scope" (include "skillhub.componentName" $ctx) }}
+                  key: entra-api-scope
+            {{- end }}
+          {{- if .Values.keyVault.secrets.frontend }}
+          volumeMounts:
+            {{- include "skillhub.spcVolumeMount" . | nindent 12 }}
+          {{- end }}
           resources:
             {{- toYaml .Values.frontend.resources | nindent 12 }}
           # Next.js standalone server starts fast; small initialDelay.
@@ -57,3 +88,7 @@ spec:
             initialDelaySeconds: 30
             periodSeconds: 20
             failureThreshold: 3
+      {{- if .Values.keyVault.secrets.frontend }}
+      volumes:
+        {{- include "skillhub.spcVolume" $ctx | nindent 8 }}
+      {{- end }}

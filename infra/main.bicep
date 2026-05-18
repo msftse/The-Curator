@@ -199,6 +199,7 @@ module rbac 'modules/rbac.bicep' = if (deployAll) {
     keyVaultName: kv!.outputs.vaultName
     cosmosAccountName: cosmos.outputs.accountName
     storageAccountName: storage.outputs.accountName
+    frontendPrincipalId: identity!.outputs.frontendPrincipalId
     backendPrincipalId: identity!.outputs.backendPrincipalId
     classifierPrincipalId: identity!.outputs.classifierPrincipalId
     curatorPrincipalId: identity!.outputs.curatorPrincipalId

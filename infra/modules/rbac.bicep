@@ -2,8 +2,10 @@
 //
 // Authorization model (mirrors AGENTS.md §3 storage split):
 //
-//   frontend         — no Azure data-plane access. All reads go through
-//                      the backend. (No assignments.)
+//   frontend         — KV Secrets User ONLY, to let the CSI driver mount the
+//                      public Entra coordinates (tenant id, SPA client id,
+//                      api scope) on the pod's behalf. The pod process itself
+//                      never holds a KV token. No Cosmos / Blob / Redis grants.
 //   backend          — KV Secrets User, Cosmos Data Contributor,
 //                      Blob Data Contributor, Blob Delegator (mints
 //                      user-delegation SAS for catalog downloads).
@@ -32,6 +34,9 @@ param cosmosAccountName string
 
 @description('Storage account name.')
 param storageAccountName string
+
+@description('Frontend UAMI principal ID.')
+param frontendPrincipalId string
 
 @description('Backend UAMI principal ID.')
 param backendPrincipalId string
@@ -92,6 +97,22 @@ resource kvAssignments 'Microsoft.Authorization/roleAssignments@2022-04-01' = [f
     principalType: 'ServicePrincipal'
   }
 }]
+
+// Frontend KV grant — separate from the data-plane loop because the frontend
+// is intentionally excluded from Cosmos / Blob / Redis (AGENTS.md §3 keeps
+// all data-plane reads behind the backend). It gets KV access only so the
+// CSI driver can mount the public Entra coordinates (tenant id, SPA client
+// id, api scope) on the frontend pod's behalf. These values are emitted as
+// `window.__ENV__` to the browser — they're public coordinates, not secrets.
+resource frontendKvAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(kv.id, frontendPrincipalId, 'kv-secrets-user')
+  scope: kv
+  properties: {
+    principalId: frontendPrincipalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', kvSecretsUserRoleId)
+    principalType: 'ServicePrincipal'
+  }
+}
 
 // Storage Blob Data Contributor for each data-plane component.
 resource blobAssignments 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for c in dataPlaneComponents: {
