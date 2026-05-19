@@ -1,0 +1,119 @@
+name: Feature request
+description: Propose a change in behavior or a new capability.
+title: "[feat] "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion. Before submitting:
+
+        - Check [`docs/PRD.md`](../../docs/PRD.md) — your idea may already be on the roadmap.
+        - Check [`AGENTS.md`](../../AGENTS.md) — proposals that violate the
+          Cosmos-first, TTL, never-delete, or pinned-immune invariants will be
+          closed.
+        - Search existing issues to avoid duplicates.
+
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: One sentence describing the proposed change.
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What user or operator need is unmet today? Who is affected (Contributor, Manager, Consumer agent, Admin)?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should change? Include API shape, UI flow, or worker behavior as relevant.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What other approaches did you weigh? Why is this one preferable?
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Backend / FastAPI
+        - Frontend / Next.js
+        - Classifier worker
+        - Curator (scheduler, dry-run, rollback)
+        - Storage layer (Cosmos / Redis / Blob)
+        - Auth (stub / OIDC / API keys)
+        - Local dev stack
+        - Infra (Bicep / AKS / Helm)
+        - CI / GitHub Actions
+        - Docs
+        - Other / cross-cutting
+    validations:
+      required: true
+
+  - type: dropdown
+    id: milestone
+    attributes:
+      label: Target milestone (best guess)
+      description: See `docs/PRD.md` §12. Pick the earliest milestone this could land in.
+      options:
+        - M0 (local end-to-end POC)
+        - M1 (CI + first deploy)
+        - M2 (curator lifecycle)
+        - M3 (LLM review)
+        - M4 (AKS / production hardening)
+        - Post-M4 / unsure
+    validations:
+      required: true
+
+  - type: textarea
+    id: invariant-impact
+    attributes:
+      label: Invariant impact
+      description: |
+        Does this proposal touch any of the non-negotiable rules in `AGENTS.md`?
+        - Cosmos-first writes (§4)
+        - TTL everything in Redis (§4)
+        - Cache misses are normal, never errors (§4)
+        - Never delete skill data (§5)
+        - Pinned skills are immune (§5)
+        - Every state transition writes audit (§8)
+
+        If "no", say "no". If "yes", explain how the proposal preserves the invariant.
+      placeholder: e.g. "No — proposal only adds a read-only catalog filter."
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How will we know this is done? Concrete, testable bullets.
+      placeholder: |
+        - [ ] Endpoint `GET /v1/skills?owner=…` filters by owner email.
+        - [ ] Cache key includes owner; TTL 60s; falls back to Cosmos on miss.
+        - [ ] Integration test covers cache hit, cache miss, and Redis-down paths.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-flight checks
+      options:
+        - label: I searched existing issues and the PRD.
+          required: true
+        - label: I confirmed this does not violate the invariants in `AGENTS.md` §4 and §5, or I explained the mitigation above.
+          required: true

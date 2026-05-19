@@ -1,0 +1,70 @@
+name: Invariant violation
+description: Suspected violation of a non-negotiable rule from AGENTS.md (Cosmos-first, TTL, never-delete, pinned-immune, audit).
+title: "[invariant] "
+labels: ["invariant-violation", "priority:high", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This template is for suspected violations of the non-negotiable rules in
+        [`AGENTS.md`](../../AGENTS.md) §4 (Redis rules) and §5 (never-delete).
+        These are triaged ahead of regular bugs because they can corrupt data.
+
+        If you are unsure whether this is an invariant violation or a regular
+        bug, file it here — we'd rather over-triage these.
+
+  - type: dropdown
+    id: invariant
+    attributes:
+      label: Which invariant is violated?
+      options:
+        - Cosmos-first writes (AGENTS.md §4 rule 1)
+        - TTL everything in Redis (AGENTS.md §4 rule 3)
+        - Cache misses must not break the app (AGENTS.md §4 rule 2)
+        - Classifier queue mitigations missing (AGENTS.md §4 rule 4)
+        - Never-delete skill data (AGENTS.md §5)
+        - Pinned skills must be immune to auto-transitions (AGENTS.md §5)
+        - Every state transition writes audit (AGENTS.md §8)
+        - Other (explain below)
+    validations:
+      required: true
+
+  - type: textarea
+    id: where
+    attributes:
+      label: Where in the code / system?
+      description: File path, function name, endpoint, worker, or runtime symptom.
+      placeholder: e.g. backend/services/publish.py:148 — writes to Redis cache before Cosmos commit
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Code excerpt, log line, audit gap, or reproduction. Be specific.
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact if left unfixed
+      description: Data loss? Stale cache? Audit gap? Recoverable or not?
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggested-fix
+    attributes:
+      label: Suggested fix (optional)
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-flight checks
+      options:
+        - label: I read the relevant section of `AGENTS.md` before filing.
+          required: true
+        - label: This is not a security disclosure (those go to the maintainers privately).
+          required: true

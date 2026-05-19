@@ -1,0 +1,111 @@
+name: Bug report
+description: Something is broken or behaving incorrectly.
+title: "[bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. Before submitting, please:
+
+        - Search [existing issues](../) to avoid duplicates.
+        - If this is a suspected violation of the Cosmos-first, TTL, never-delete,
+          or pinned-immune invariants from `AGENTS.md`, use the **Invariant
+          violation** template instead — those are triaged first.
+        - For security issues, do **not** file a public issue. Email the maintainers.
+
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: One sentence describing what's broken.
+      placeholder: e.g. Classifier worker leaves docs stuck in `pending` after Redis restart
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of the system?
+      options:
+        - Backend / FastAPI
+        - Frontend / Next.js
+        - Classifier worker
+        - Curator (scheduler, dry-run, rollback)
+        - Storage layer (Cosmos / Redis / Blob)
+        - Auth (stub / OIDC / API keys)
+        - Local dev stack (docker-compose, emulators)
+        - Infra (Bicep / AKS / Helm)
+        - CI / GitHub Actions
+        - Docs
+        - Other / unsure
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Minimal reproduction. Include commands run, requests made, fixture data if relevant.
+      placeholder: |
+        1. `docker compose up -d`
+        2. `uv run uvicorn backend.app:app --reload`
+        3. POST /v1/skills with attached bundle
+        4. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include exact error messages, log output, and any audit / Cosmos state observed.
+    validations:
+      required: true
+
+  - type: input
+    id: skill-id
+    attributes:
+      label: Affected skill_id (if applicable)
+      placeholder: e.g. skl_01HXYZ...
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, Node version, branch / commit SHA, local vs deployed.
+      placeholder: |
+        - OS: macOS 14.5
+        - Python: 3.12.3
+        - Node: 20.11
+        - Branch / commit: main @ abc1234
+        - Running on: local docker-compose
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs / screenshots
+      description: Paste backend logs, browser console output, or screenshots. Redact secrets.
+      render: shell
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-flight checks
+      options:
+        - label: I searched existing issues and did not find a duplicate.
+          required: true
+        - label: I verified this reproduces on a clean local stack (`docker compose up -d`) — or explained why I couldn't.
+          required: true
+        - label: I redacted any secrets, API keys, or PII from logs and screenshots.
+          required: true
