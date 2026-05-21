@@ -24,6 +24,12 @@ AuditAction = Literal[
     # AGENTS.md §5).
     "quarantine",
     "quarantine_delete",
+    # M5-4 — admin overrode a defender medium/high finding with a
+    # justification. Flips the skill back to the normal review pipeline
+    # (defender_status=clean) so the existing approve flow can run. The
+    # original defender_report + severity are preserved on the doc; the
+    # override is the audit row's responsibility.
+    "defender_override",
     "pause",
     "resume",
     "pin",

@@ -20,6 +20,7 @@ from backend.models.api import (
     ApproveRequest,
     ArchiveRequest,
     ClassificationPatch,
+    DefenderOverrideRequest,
     QuarantineRequest,
     RejectRequest,
     SkillListItem,
@@ -27,6 +28,7 @@ from backend.models.api import (
 from backend.services import catalog as catalog_svc
 from backend.services import classification as classification_svc
 from backend.services import curator as curator_svc
+from backend.services import defender_override as defender_override_svc
 from backend.services import publish as publish_svc
 from backend.services import quarantine as quarantine_svc
 
@@ -185,6 +187,51 @@ async def quarantine_skill(
         skills=skills,
         audit=audit,
         blob=blob,
+        redis=redis,
+    )
+    return _to_item(doc)
+
+
+@router.post("/skills/{skill_id}/defender-override", response_model=SkillListItem)
+async def defender_override(
+    skill_id: str,
+    body: DefenderOverrideRequest,
+    user: User = Depends(_require_admin),
+    settings: Settings = Depends(settings_dep),
+    skills: ContainerProxy = Depends(get_skills_container),
+    audit: ContainerProxy = Depends(get_audit_container),
+    redis: Redis = Depends(get_redis_client),
+) -> SkillListItem:
+    """Admin overrides a defender-flagged finding (M5-4).
+
+    Preconditions:
+      - Caller has `admin` role (enforced by dependency).
+      - `defender_status == 'flagged'` — else 409 `DEFENDER_NOT_FLAGGED`.
+      - `justification` length >= `quarantine_min_justification_chars`
+        (default 20) — else 422 `JUSTIFICATION_REQUIRED`.
+      - Skill not pinned — else 409 `SKILL_PINNED`.
+
+    Effects (Cosmos-only flip; AGENTS.md §4 rule 1):
+      1. Cosmos doc: `defender_status='clean'`. `defender_severity` and
+         `defender_report` are preserved so the audit trail and the
+         catalog detail page still show what the scanner found.
+      2. Immutable audit row (`action='defender_override'`) carrying
+         the justification, original severity, and report id.
+      3. Catalog cache invalidated.
+
+    Skill `status` is *not* changed — the admin still has to call
+    `POST /v1/admin/skills/{id}/approve` to publish. Override is the
+    "I disagree with the scanner" signal; approve is the "ship it"
+    signal. Keeping them separate keeps the audit narrative honest.
+    """
+    doc = await defender_override_svc.override_defender(
+        skill_id=skill_id,
+        actor=user.email,
+        actor_oid=user.oid,
+        justification=body.justification,
+        settings=settings,
+        skills=skills,
+        audit=audit,
         redis=redis,
     )
     return _to_item(doc)

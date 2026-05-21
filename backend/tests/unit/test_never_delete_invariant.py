@@ -79,6 +79,9 @@ _GUARDED_FILES = [
     # `_BLOB_DELETE_ALLOWED_SITES` below).
     "backend/services/quarantine.py",
     "backend/services/quarantine_janitor.py",
+    # M5-4 — Defender admin override. Cosmos-only flip + audit row; no
+    # blob mutations, no Cosmos deletes.
+    "backend/services/defender_override.py",
 ]
 
 # `delete_item` is *always* forbidden (Cosmos delete = data loss).

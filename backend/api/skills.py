@@ -77,6 +77,17 @@ async def get_skill(
         user_category=doc.user_category,
         user_tags=list(doc.user_tags),
         skill_md_text=doc.skill_md_text,
+        # M5-4 — defender report + quarantine mirrors. The admin UI
+        # renders these directly; safe to surface to non-admin readers
+        # too (the report is an audit signal, not a secret).
+        defender_status=doc.defender_status,
+        defender_severity=doc.defender_severity,
+        defender_report=doc.defender_report,
+        defender_scanned_at=doc.defender_scanned_at,
+        quarantined_at=doc.quarantined_at,
+        quarantined_by=doc.quarantined_by,
+        quarantine_justification=doc.quarantine_justification,
+        quarantine_expires_at=doc.quarantine_expires_at,
     )
 
 
