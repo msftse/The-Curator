@@ -1,0 +1,9 @@
+A skill has been moved to QUARANTINE. This is terminal — the bundle
+will be deleted after the retention window.
+
+Skill:        {skill_name}
+ID:           {skill_id}
+Version:      {version}
+Quarantined by: {actor}
+Justification: {justification}
+Severity:     {defender_severity}

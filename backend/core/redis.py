@@ -152,6 +152,16 @@ def key_queue_notifications() -> str:
     return "queue:notifications"
 
 
+def key_notif_sent(idempotency_key: str) -> str:
+    """M5-5: notifier dedupe lock. SETNX with TTL; presence = already sent."""
+    return f"notif:sent:{idempotency_key}"
+
+
+def key_admin_recipients() -> str:
+    """M5-5: cached Graph admin-recipient list. Short TTL."""
+    return "admin:recipients"
+
+
 def key_lock_publish(skill_id: str) -> str:
     return f"lock:publish:{skill_id}"
 

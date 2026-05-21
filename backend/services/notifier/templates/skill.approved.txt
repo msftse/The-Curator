@@ -1,0 +1,9 @@
+Good news — your skill has been APPROVED and published.
+
+Skill:        {skill_name}
+ID:           {skill_id}
+Version:      {version}
+Approved by:  {actor}
+Published at: {published_at}
+
+It is now available to agents in the catalog.

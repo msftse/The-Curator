@@ -140,6 +140,33 @@ class Settings(BaseSettings):
     defender_blpop_timeout_seconds: int = 5
     notifications_queue_key: str = "queue:notifications"
 
+    # ---- Notifier (M5-5) ----
+    # Provider toggle. `fake` captures sends in memory (default — used by
+    # unit tests and local-dev); `azure` calls Azure Communication Services
+    # via the lazily-imported `azure-communication-email` SDK.
+    notifier_provider: Literal["fake", "azure"] = "fake"
+    # Same shape for Graph: `fake` returns a static admin list so
+    # contributors don't need the tenant-admin-consented
+    # `GroupMember.Read.All` app permission locally.
+    notifier_graph_provider: Literal["fake", "azure"] = "fake"
+    # ACS auth — connection string (simplest, from Key Vault in cloud) OR
+    # endpoint + Managed Identity. Real client picks whichever is set.
+    acs_connection_string: str = ""
+    acs_endpoint: str = ""
+    acs_sender_address: str = "DoNotReply@example.azurecomm.net"
+    # Optional dedicated admin group for notifications; falls back to
+    # `entra_group_id_admin` if blank (so dev environments only need one).
+    entra_group_id_admin_notifications: str = ""
+    # Notifier worker tuning. Idempotency TTL matches the dedupe-window
+    # design in plan §5 (24h). Recipient cache is short by comparison so
+    # group-membership changes propagate within a quarter hour.
+    notifier_blpop_timeout_seconds: int = 5
+    notifier_dedupe_ttl_seconds: int = 86_400
+    notifier_recipients_cache_ttl_seconds: int = 900
+    # Optional base URL the templates use to build "open review" /
+    # "report URL" links. Leave blank in tests; chart sets it per env.
+    notifier_review_url_base: str = ""
+
     # ---- Quarantine (M5-3) ----
     # Days bundle bytes live in `quarantine/` before the dedicated
     # quarantine janitor deletes them. AGENTS.md §5 carves this out as the

@@ -1,0 +1,12 @@
+Weekly curator report — {window_start} through {window_end}.
+
+Passes run:          {pass_count}
+Skills transitioned: {transition_count}
+  → stale:           {stale_count}
+  → archived:        {archived_count}
+Snapshots taken:     {snapshot_count}
+Errors:              {error_count}
+
+Dry-run differences this week: {dry_run_diffs}
+
+Full report: {report_url}

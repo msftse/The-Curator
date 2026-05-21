@@ -1,0 +1,12 @@
+Defender flagged a skill. Manual review required.
+
+Skill:    {skill_name}
+ID:       {skill_id}
+Version:  {version}
+Severity: {severity}
+Findings: {finding_count}
+
+Top finding: {top_finding_rule} at {top_finding_location}
+  {top_finding_explanation}
+
+Review URL: {review_url}
