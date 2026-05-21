@@ -58,6 +58,12 @@ _GUARDED_FILES = [
     "backend/services/llm/fake.py",
     # M4 — Kubernetes job dispatch (curator on-demand).
     "backend/services/k8s_jobs.py",
+    # M5-2 — Defender (LLM security scanner). No Cosmos/Blob/Redis I/O in
+    # the scanner; the worker writes Cosmos but never deletes.
+    "backend/services/defender/__init__.py",
+    "backend/services/defender/scanner.py",
+    "backend/services/defender/prompts.py",
+    "backend/workers/defender.py",
 ]
 
 # M5 placeholder — the quarantine janitor (M5-3) will be the ONE allowed
