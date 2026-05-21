@@ -150,13 +150,15 @@ async def test_process_one_clean_sets_status_and_pushes_notification(monkeypatch
     assert stored.defender_report is not None
     assert stored.defender_scanned_at is not None
 
-    # Item cache busted; notification placeholder pushed.
+    # Item cache busted; notifier event pushed (M5-6 — `skill.awaiting_review`
+    # when defender clean).
     assert key_cache_item(doc.skill_id) in redis.deleted
     pushed_keys = [k for k, _ in redis.pushed]
     assert key_queue_notifications() in pushed_keys
     payload = json.loads(next(v for k, v in redis.pushed if k == key_queue_notifications()))
-    assert payload["event_type"] == "defender.completed"
-    assert payload["defender_status"] == "clean"
+    assert payload["event_type"] == "skill.awaiting_review"
+    assert payload["skill_id"] == doc.skill_id
+    assert payload["payload"]["defender_severity"] == "clean"
 
     # Audit row written (action="classify" with phase=defender — see worker comment).
     assert len(audit.audits) == 1
