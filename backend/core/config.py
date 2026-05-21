@@ -53,6 +53,13 @@ class Settings(BaseSettings):
     blob_published_container: str = "published"
     blob_archive_container: str = "archive"
     blob_snapshots_container: str = "snapshots"
+    # M5 — terminal bucket for skills an admin has rejected as malicious.
+    # The ONE container in the system where delete-after-N-days is allowed,
+    # owned by a dedicated janitor (M5-3). See AGENTS.md §5.
+    # The env name `QUARANTINE_CONTAINER` (not `BLOB_QUARANTINE_CONTAINER`)
+    # matches the canonical KV / chart key — pydantic-settings is case-
+    # insensitive and accepts both.
+    blob_quarantine_container: str = "quarantine"
 
     def use_blob_identity(self) -> bool:
         """True when the blob client should authenticate via DefaultAzureCredential."""

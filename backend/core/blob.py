@@ -59,11 +59,18 @@ def get_blob_service(settings: Settings) -> BlobServiceClient:
 
 
 async def ensure_containers(svc: BlobServiceClient, settings: Settings) -> None:
-    """Create published / archive / snapshots / curator containers idempotently."""
+    """Create published / archive / snapshots / quarantine / curator containers idempotently.
+
+    `quarantine` is the M5 terminal bucket for skills an admin has rejected
+    as malicious. See AGENTS.md §5 — it is the ONE container in the system
+    where delete-after-N-days is permitted, and it is owned by a dedicated
+    janitor (M5-3); the curator and backend MUST NOT delete from it.
+    """
     for name in (
         settings.blob_published_container,
         settings.blob_archive_container,
         settings.blob_snapshots_container,
+        settings.blob_quarantine_container,
         settings.curator_reports_container,
     ):
         container = svc.get_container_client(name)
