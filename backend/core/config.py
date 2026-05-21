@@ -140,6 +140,17 @@ class Settings(BaseSettings):
     defender_blpop_timeout_seconds: int = 5
     notifications_queue_key: str = "queue:notifications"
 
+    # ---- Quarantine (M5-3) ----
+    # Days bundle bytes live in `quarantine/` before the dedicated
+    # quarantine janitor deletes them. AGENTS.md §5 carves this out as the
+    # ONE delete-after-N-days code path in the system. Default mirrors the
+    # `usage_events` 90-day window; operators can shorten in dev.
+    quarantine_retention_days: int = 30
+    # Minimum length for the admin-supplied justification on the
+    # `/admin/skills/{id}/quarantine` endpoint. Mirrors the defender
+    # override justification floor (`>=20 chars`, plan §3).
+    quarantine_min_justification_chars: int = 20
+
     # ---- Cache TTLs (seconds) ----
     cache_list_ttl_seconds: int = 60
     cache_item_ttl_seconds: int = 300

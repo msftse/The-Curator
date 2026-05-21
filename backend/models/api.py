@@ -79,6 +79,23 @@ class ApproveRequest(BaseModel):
     pass
 
 
+class QuarantineRequest(BaseModel):
+    """Body for admin quarantine (`POST /v1/admin/skills/{id}/quarantine`).
+
+    `justification` is required and must meet the configured minimum
+    length (defaults to 20 chars, mirroring the defender override
+    justification floor). The text is audit-logged verbatim, so admins
+    should write the *why* — not "bad" — for the future operator who
+    reads the trail.
+
+    Length validation against `Settings.quarantine_min_justification_chars`
+    happens at the service layer (this model just enforces non-empty and
+    a generous upper bound).
+    """
+
+    justification: str = Field(min_length=1, max_length=2000)
+
+
 class ClassificationPatch(BaseModel):
     category: str | None = None
     tags: list[str] | None = None

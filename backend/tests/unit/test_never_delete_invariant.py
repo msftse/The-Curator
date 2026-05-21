@@ -1,10 +1,19 @@
 """Never-delete invariant — static AST gate (AGENTS.md §5).
 
 Curator code MUST NOT call `*.delete_item(...)` anywhere, and MUST NOT call
-`*.delete_blob(...)` outside the body of `move_published_to_archive` in
-`backend/services/curator.py`. The latter is the single allowed callsite —
-"archive = move, not copy" — and it is guarded at runtime by an
-`await dest.exists()` verification before the source delete.
+`*.delete_blob(...)` outside the two specifically-allowed callsites:
+
+  1. `move_published_to_archive` in `backend/services/curator.py` — the
+     "archive = move, not copy" contract. Verified at runtime by
+     `await dest.exists()` before the source delete.
+  2. `move_to_deleted_after_retention` in
+     `backend/services/quarantine_janitor.py` (M5-3) — the ONE
+     delete-after-N-days code path in the system. Verified at runtime by
+     checking `doc.quarantine_expires_at <= now` before the source
+     delete.
+
+Both are the verified-terminal end of their respective lifecycles.
+Anywhere else, a `delete_blob` or `delete_item` is a hard test failure.
 
 This is a code-level guard so regressions get caught even without
 integration coverage.
@@ -16,8 +25,8 @@ How the scan works:
      access (`x.y(...)`):
        - if `attr == "delete_item"` → always an offense.
        - if `attr == "delete_blob"` → offense unless the enclosing
-         function definition is `move_published_to_archive` in
-         `backend/services/curator.py`.
+         function definition is one of the (path, fn_name) pairs in
+         `_BLOB_DELETE_ALLOWED_SITES`.
 
 Enclosing function is computed by attaching parents to every node
 (`ast` doesn't track parents natively) then walking up until we hit a
@@ -64,25 +73,34 @@ _GUARDED_FILES = [
     "backend/services/defender/scanner.py",
     "backend/services/defender/prompts.py",
     "backend/workers/defender.py",
-]
-
-# M5 placeholder — the quarantine janitor (M5-3) will be the ONE allowed
-# exception to the delete-blob prohibition outside `move_published_to_archive`,
-# because quarantine is the only container where delete-after-N-days is
-# permitted (AGENTS.md §5). The file does not exist yet; when M5-3 lands,
-# move this entry from `_M5_PLACEHOLDER_FILES` into `_GUARDED_FILES` AND
-# extend `_BLOB_DELETE_ALLOWED_SITES` with the new `(path, fn_name)` pair.
-_M5_PLACEHOLDER_FILES = [
+    # M5-3 — Quarantine flow. Service has zero deletes (the staging bytes
+    # live inline on the Cosmos doc and are cleared by a Cosmos write).
+    # Janitor has ONE allowed delete callsite (see
+    # `_BLOB_DELETE_ALLOWED_SITES` below).
+    "backend/services/quarantine.py",
     "backend/services/quarantine_janitor.py",
 ]
 
 # `delete_item` is *always* forbidden (Cosmos delete = data loss).
 _FORBIDDEN_ALWAYS = {"delete_item"}
 
-# `delete_blob` is forbidden EXCEPT inside this single function in this
-# single file. The function verifies `await dest.exists()` immediately
-# before calling `src.delete_blob()` (AGENTS.md §5 archive=move).
-_BLOB_DELETE_ALLOWED = ("backend/services/curator.py", "move_published_to_archive")
+# `delete_blob` is forbidden EXCEPT inside these (relative_path, function_name)
+# pairs. Each pair represents a verified-terminal lifecycle end:
+#
+#   - curator.move_published_to_archive: verifies `await dest.exists()`
+#     on the archive container before deleting the source from
+#     `published/`. "archive = move" (AGENTS.md §5).
+#   - quarantine_janitor.move_to_deleted_after_retention: verifies the
+#     skill doc's `quarantine_expires_at` is past `now` before deleting
+#     the bundle blob from `quarantine/`. The ONE delete-after-N-days
+#     code path in the system (AGENTS.md §5).
+_BLOB_DELETE_ALLOWED_SITES: set[tuple[str, str]] = {
+    ("backend/services/curator.py", "move_published_to_archive"),
+    (
+        "backend/services/quarantine_janitor.py",
+        "move_to_deleted_after_retention",
+    ),
+}
 
 
 def _attach_parents(tree: ast.AST) -> None:
@@ -125,29 +143,30 @@ def test_no_forbidden_delete_calls(rel: str) -> None:
             continue
 
         if attr == "delete_blob":
-            allowed_file, allowed_fn = _BLOB_DELETE_ALLOWED
             enclosing = _enclosing_function_name(node)
-            if rel == allowed_file and enclosing == allowed_fn:
-                continue  # the one allowed callsite
+            if (rel, enclosing) in _BLOB_DELETE_ALLOWED_SITES:
+                continue  # one of the verified-terminal allowed callsites
             offenders.append((node.lineno, attr, enclosing or "<module>"))
 
     assert not offenders, (
         f"{rel} contains forbidden delete calls (AGENTS.md §5 never-delete): "
         f"{offenders}. `delete_item` is forbidden everywhere; `delete_blob` "
-        f"is allowed ONLY inside `move_published_to_archive` in "
-        f"backend/services/curator.py."
+        f"is allowed ONLY inside the verified-terminal callsites listed in "
+        f"`_BLOB_DELETE_ALLOWED_SITES`."
     )
 
 
-def test_move_published_to_archive_does_call_delete_blob() -> None:
-    """Positive control: the one allowed callsite must actually exist.
+@pytest.mark.parametrize("allowed_file,allowed_fn", sorted(_BLOB_DELETE_ALLOWED_SITES))
+def test_allowed_delete_blob_sites_actually_call_delete_blob(
+    allowed_file: str, allowed_fn: str
+) -> None:
+    """Positive control: every whitelisted callsite must actually exist.
 
-    Catches the regression where someone refactors away the verified-move
-    semantics and reverts to copy-only. If this test fails, either the
-    function was renamed (update `_BLOB_DELETE_ALLOWED`) or the
-    archive-as-move contract was silently broken — re-read AGENTS.md §5.
+    Catches the regression where someone refactors away the verified-terminal
+    semantics and reverts to copy-only / leave-forever. If this test fails,
+    either the function was renamed (update `_BLOB_DELETE_ALLOWED_SITES`)
+    or the contract was silently broken — re-read AGENTS.md §5.
     """
-    allowed_file, allowed_fn = _BLOB_DELETE_ALLOWED
     path = _ROOT / allowed_file
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     _attach_parents(tree)
@@ -164,27 +183,7 @@ def test_move_published_to_archive_does_call_delete_blob() -> None:
             break
     assert found, (
         f"expected `delete_blob(...)` inside `{allowed_fn}` of {allowed_file} "
-        f"(AGENTS.md §5 'archive = move'); none found. The verified-move "
-        f"contract may have regressed to copy-only."
+        f"(AGENTS.md §5 verified-terminal lifecycle end); none found. The "
+        f"contract may have regressed — either the function was renamed or "
+        f"the delete was removed entirely."
     )
-
-
-def test_m5_quarantine_janitor_placeholder_documented() -> None:
-    """Track the M5-3 quarantine janitor without forcing it to exist yet.
-
-    AGENTS.md §5 carves quarantine out as the ONE container where
-    delete-after-N-days is permitted. The janitor that performs that
-    deletion will land in M5-3. This test is a structural reminder: when
-    the file appears on disk, the gate above MUST be updated to include
-    it in `_GUARDED_FILES` AND `_BLOB_DELETE_ALLOWED_SITES` (or whatever
-    multi-site mechanism replaces the single-tuple constant), so the
-    new file doesn't bypass the AST scan.
-    """
-    for rel in _M5_PLACEHOLDER_FILES:
-        path = _ROOT / rel
-        if path.exists():
-            pytest.fail(
-                f"{rel} now exists — promote it from _M5_PLACEHOLDER_FILES "
-                f"into _GUARDED_FILES and add its single allowed delete callsite "
-                f"to the blob-delete allowlist (mirroring `move_published_to_archive`)."
-            )

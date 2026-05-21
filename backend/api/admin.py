@@ -20,6 +20,7 @@ from backend.models.api import (
     ApproveRequest,
     ArchiveRequest,
     ClassificationPatch,
+    QuarantineRequest,
     RejectRequest,
     SkillListItem,
 )
@@ -27,6 +28,7 @@ from backend.services import catalog as catalog_svc
 from backend.services import classification as classification_svc
 from backend.services import curator as curator_svc
 from backend.services import publish as publish_svc
+from backend.services import quarantine as quarantine_svc
 
 router = APIRouter(prefix="/v1/admin", tags=["admin"])
 
@@ -135,6 +137,55 @@ async def archive_skill(
         blob=blob,
         redis=redis,
         settings=settings,
+    )
+    return _to_item(doc)
+
+
+@router.post("/skills/{skill_id}/quarantine", response_model=SkillListItem)
+async def quarantine_skill(
+    skill_id: str,
+    body: QuarantineRequest,
+    user: User = Depends(_require_admin),
+    settings: Settings = Depends(settings_dep),
+    skills: ContainerProxy = Depends(get_skills_container),
+    audit: ContainerProxy = Depends(get_audit_container),
+    blob: BlobServiceClient = Depends(get_blob),
+    redis: Redis = Depends(get_redis_client),
+) -> SkillListItem:
+    """Admin response to a defender-flagged skill (M5-3).
+
+    Preconditions:
+      - Caller has `admin` role (enforced by dependency).
+      - `defender_status == 'flagged'` — else 409 `DEFENDER_NOT_FLAGGED`.
+      - `justification` length >= `quarantine_min_justification_chars`
+        (default 20) — else 422 `JUSTIFICATION_REQUIRED`.
+      - Skill not pinned — else 409 `SKILL_PINNED`.
+
+    Effects (Cosmos-first, AGENTS.md §4 rule 1):
+      1. Bundle bytes copied to `quarantine/{id}/{ver}/bundle.tar.gz`;
+         destination verified before the Cosmos flip.
+      2. Cosmos doc: `status='quarantined'`, `quarantined_at`,
+         `quarantined_by`, `quarantine_justification`,
+         `quarantine_expires_at = now + QUARANTINE_RETENTION_DAYS`.
+      3. Immutable audit row (`action='quarantine'`) with the
+         justification text.
+      4. Catalog cache invalidated.
+
+    The bundle bytes are deleted from `quarantine/` only after
+    `quarantine_expires_at` by the dedicated quarantine janitor — the
+    ONE delete-after-N-days code path in the system (AGENTS.md §5).
+    The Cosmos doc itself is never deleted.
+    """
+    doc = await quarantine_svc.quarantine_skill(
+        skill_id=skill_id,
+        actor=user.email,
+        actor_oid=user.oid,
+        justification=body.justification,
+        settings=settings,
+        skills=skills,
+        audit=audit,
+        blob=blob,
+        redis=redis,
     )
     return _to_item(doc)
 

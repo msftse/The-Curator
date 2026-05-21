@@ -130,6 +130,15 @@ async def process_one(
         return
 
     doc = SkillDoc.model_validate(raw)
+    # M5-3: short-circuit on quarantined. Same guarantee as the classifier
+    # — a quarantined skill never re-enters scan flow even if a stale
+    # message was re-pushed by the janitor before the admin acted.
+    if doc.status == "quarantined":
+        log.info(
+            "defender_skipped_quarantined",
+            extra={"doc_id": doc_id, "skill_id": skill_id},
+        )
+        return
     before = {
         "status": doc.status,
         "defender_status": doc.defender_status,

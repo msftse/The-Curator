@@ -114,3 +114,17 @@ class SkillDoc(BaseModel):
     defender_report: dict | None = None
     defender_report_id: str | None = None
     defender_scanned_at: datetime | None = None
+
+    # ---- Quarantine (M5-3) ----
+    # Set when an admin moves a defender-flagged skill into the terminal
+    # `quarantine/` blob container. The justification text and actor are
+    # *also* recorded on the immutable audit row — these mirrors exist on
+    # the doc so the catalog detail page can show "why was this killed?"
+    # without a second Cosmos round-trip. `quarantine_expires_at` is the
+    # wall-clock deadline after which the quarantine janitor (the ONE
+    # delete-after-N-days code path; AGENTS.md §5) deletes the bundle
+    # bytes — the Cosmos doc itself is never deleted.
+    quarantined_at: datetime | None = None
+    quarantined_by: str | None = None
+    quarantine_justification: str | None = None
+    quarantine_expires_at: datetime | None = None

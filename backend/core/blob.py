@@ -85,6 +85,17 @@ def published_blob_path(skill_id: str, version: str) -> str:
     return f"{skill_id}/{version}/bundle.tar.gz"
 
 
+def quarantine_blob_path(skill_id: str, version: str) -> str:
+    """Path used inside the `quarantine/` container (M5-3).
+
+    Mirrors `published_blob_path` so the same `{skill}/{version}/bundle.tar.gz`
+    layout works across containers. The quarantine container is the ONE
+    place delete-after-N-days is permitted (AGENTS.md §5), owned by
+    `backend.services.quarantine_janitor`.
+    """
+    return f"{skill_id}/{version}/bundle.tar.gz"
+
+
 async def put_published(
     svc: BlobServiceClient,
     settings: Settings,

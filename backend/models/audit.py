@@ -17,6 +17,13 @@ AuditAction = Literal[
     "publish",
     "archive",
     "stale",
+    # M5-3 — admin moved a defender-flagged skill to the quarantine
+    # container. Terminal status. Bundle bytes live in quarantine/ until
+    # the quarantine janitor deletes them after `QUARANTINE_RETENTION_DAYS`
+    # (the ONE allowed delete-after-N-days code path in the system; see
+    # AGENTS.md §5).
+    "quarantine",
+    "quarantine_delete",
     "pause",
     "resume",
     "pin",

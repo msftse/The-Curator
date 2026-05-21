@@ -93,6 +93,14 @@ async def process_one(
         return
 
     doc = SkillDoc.model_validate(raw)
+    # M5-3: a quarantined skill must never re-enter classifier flow even
+    # if a stale queue message resurrects it. Bail before touching Cosmos.
+    if doc.status == "quarantined":
+        log.info(
+            "classifier_skipped_quarantined",
+            extra={"doc_id": doc_id, "skill_id": skill_id},
+        )
+        return
     before = {"status": doc.status, "classifier_status": doc.classifier_status}
     try:
         result = await classifier.classify(doc.skill_md_text)
