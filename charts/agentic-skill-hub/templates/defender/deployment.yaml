@@ -1,0 +1,65 @@
+{{- $component := "defender" -}}
+{{- $ctx := dict "component" $component "Chart" .Chart "Release" .Release "Values" .Values -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "skillhub.componentName" $ctx }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "skillhub.componentLabels" $ctx | nindent 4 }}
+spec:
+  # Replicas owned by the KEDA ScaledObject (see scaledobject.yaml). Helm
+  # sets `0` so the install doesn't fight KEDA on initial reconcile; KEDA
+  # scales up immediately if `LLEN queue:defender` has backlog.
+  replicas: 0
+  selector:
+    matchLabels:
+      {{- include "skillhub.selectorLabels" $ctx | nindent 6 }}
+  strategy:
+    type: Recreate   # workers are stateless w.r.t. each other; no rolling
+  template:
+    metadata:
+      labels:
+        {{- include "skillhub.selectorLabels" $ctx | nindent 8 }}
+        {{- include "skillhub.wiPodLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ $component }}
+      securityContext:
+        {{- include "skillhub.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: defender
+          image: {{ include "skillhub.image" $ctx }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- include "skillhub.containerSecurityContext" . | nindent 12 }}
+          # No ports — the defender is a queue consumer, not an HTTP server.
+          env:
+            {{- include "skillhub.envFromMap" .Values.defender.env | nindent 12 }}
+            - name: REDIS_ENTRA_USERNAME
+              value: {{ include "skillhub.wiPrincipalId" (dict "Values" .Values "component" "defender") | quote }}
+            {{- if .Values.keyVault.secrets.defender }}
+            - name: AZURE_AI_FOUNDRY_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ printf "%s-foundry" (include "skillhub.componentName" $ctx) }}
+                  key: foundry-api-key
+            {{- end }}
+          volumeMounts:
+            {{- if .Values.keyVault.secrets.defender }}
+            {{- include "skillhub.spcVolumeMount" . | nindent 12 }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.defender.resources | nindent 12 }}
+          # Same shape as the classifier — no HTTP probe, use pgrep on the
+          # python entrypoint.
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pgrep -f backend.workers.defender"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+      volumes:
+        {{- if .Values.keyVault.secrets.defender }}
+        {{- include "skillhub.spcVolume" $ctx | nindent 8 }}
+        {{- end }}
+      terminationGracePeriodSeconds: 30
