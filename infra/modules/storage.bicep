@@ -38,11 +38,16 @@ resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01'
   }
 }
 
+// `quarantine` is the M5 defender terminal-bucket for skills an admin
+// has rejected as malicious. It is the ONE exception to the never-delete
+// invariant: a janitor MAY delete-after-N-days here (see AGENTS.md §5).
+// No lifecycle delete rule is configured on the account; the janitor (M5-3)
+// owns the policy explicitly. RBAC: backend writes, curator has NO write.
 var containerNames = [
   'published'
   'archive'
   'snapshots'
-  'staging'
+  'quarantine'
 ]
 
 resource containers 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = [for n in containerNames: {

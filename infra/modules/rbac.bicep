@@ -47,6 +47,15 @@ param classifierPrincipalId string
 @description('Curator UAMI principal ID.')
 param curatorPrincipalId string
 
+@description('Defender UAMI principal ID (M5).')
+param defenderPrincipalId string = ''
+
+@description('Notifier UAMI principal ID (M5).')
+param notifierPrincipalId string = ''
+
+@description('ACS resource ID for notifier role scoping (M5). Empty = skip ACS RBAC.')
+param acsResourceId string = ''
+
 @description('Whether to assign Cosmos data-plane RBAC. Prod=true, dev/staging=false (key-based).')
 param assignCosmosDataPlane bool = false
 
@@ -59,6 +68,19 @@ var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 //   - backend GET /v1/skills/{id}/download_url  (signed catalog downloads)
 //   - curator snapshot + restore code paths in backend/core/blob.py
 var storageBlobDelegatorRoleId = 'db58b8e5-c6ad-4a2a-8342-4190687cbf4a'  // Storage Blob Delegator
+// M5 — Defender reads bundle bytes from blob (any container; we keep it at
+// Blob Data Contributor parity with classifier/backend for simplicity in v1).
+// Cognitive Services User on the AI Services account is granted out-of-band
+// the same way the classifier already does (FOUNDRY_DEPLOYMENT side).
+// M5 — Notifier sends email via ACS. The built-in role is "Contributor" on
+// the ACS resource for v1 (Azure has no dedicated "ACS Sender" data-plane
+// role today — the SMS/Email send is gated by the connection string, which
+// the notifier reads from KV). Document & revisit when ACS publishes a
+// granular role. KV Secrets User covers the connection-string read.
+// Graph `GroupMember.Read.All` is an Entra app permission, NOT an Azure RBAC
+// role — admin-consented via setup-entra.sh extension (M5-5); not auto-granted
+// here by design.
+var acsContributorRoleId = 'b24988ac-6180-42a0-ab88-20f7382dd24c'  // Contributor (placeholder until ACS gets a data role)
 
 resource kv 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
   name: keyVaultName
@@ -69,10 +91,16 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
 resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2024-05-15' existing = {
   name: cosmosAccountName
 }
+resource acs 'Microsoft.Communication/communicationServices@2023-04-01' existing = if (!empty(acsResourceId)) {
+  name: last(split(acsResourceId, '/'))
+}
 
 // Components that get the full data-plane grant. Frontend is intentionally
-// absent; backend-k8s-jobs is K8s-only and not represented here.
-var dataPlaneComponents = [
+// absent; backend-k8s-jobs is K8s-only and not represented here. Defender
+// (M5) joins the data plane: it reads bundles, writes the defender report
+// back to Cosmos, and (via the backend on quarantine) needs blob read on
+// uploads + blob write on quarantine.
+var dataPlaneComponents = empty(defenderPrincipalId) ? [
   {
     name: 'backend'
     principalId: backendPrincipalId
@@ -84,6 +112,23 @@ var dataPlaneComponents = [
   {
     name: 'curator'
     principalId: curatorPrincipalId
+  }
+] : [
+  {
+    name: 'backend'
+    principalId: backendPrincipalId
+  }
+  {
+    name: 'classifier'
+    principalId: classifierPrincipalId
+  }
+  {
+    name: 'curator'
+    principalId: curatorPrincipalId
+  }
+  {
+    name: 'defender'
+    principalId: defenderPrincipalId
   }
 ]
 
@@ -155,3 +200,38 @@ resource cosmosAssignments 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignm
 }]
 
 output assignmentCount int = length(dataPlaneComponents)
+
+// ---------------------------------------------------------------------------
+// M5 — Notifier UAMI role assignments.
+//
+// Notifier is intentionally NOT in `dataPlaneComponents`: it does not read
+// Cosmos directly, does not read/write Blob, and does not need Blob
+// Delegator. It only needs:
+//   1. Key Vault Secrets User (read `acs-connection-string`).
+//   2. Contributor on the ACS resource (placeholder until ACS publishes a
+//      dedicated send-only data role).
+//   3. Microsoft Graph `GroupMember.Read.All` — Entra app permission, NOT
+//      Azure RBAC. Granted out-of-band via setup-entra.sh extension in M5-5.
+//      Intentionally not auto-granted here so tenant-admin consent remains
+//      explicit (plan §12 risk #1).
+// ---------------------------------------------------------------------------
+
+resource notifierKvAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(notifierPrincipalId)) {
+  name: guid(kv.id, notifierPrincipalId, 'kv-secrets-user')
+  scope: kv
+  properties: {
+    principalId: notifierPrincipalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', kvSecretsUserRoleId)
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource notifierAcsAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(notifierPrincipalId) && !empty(acsResourceId)) {
+  name: guid(acsResourceId, notifierPrincipalId, 'acs-sender')
+  scope: acs
+  properties: {
+    principalId: notifierPrincipalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acsContributorRoleId)
+    principalType: 'ServicePrincipal'
+  }
+}
