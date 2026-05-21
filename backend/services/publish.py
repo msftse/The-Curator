@@ -28,6 +28,11 @@ from backend.core.logging import bind, get_logger
 from backend.core.redis import key_cache_item, key_cache_list, key_lock_publish, redis_lock
 from backend.models.skill import Bundle, SkillDoc
 from backend.services import audit as audit_svc
+from backend.services.notifier import (
+    build_event,
+    enqueue_notification,
+    make_idempotency_key,
+)
 from backend.services.skill_bundle import build_tar, extract_tar
 
 log = get_logger(__name__)
@@ -116,6 +121,30 @@ async def publish(
         except Exception as exc:  # pragma: no cover
             log.warning("cache_invalidation_failed", extra={"err": str(exc)})
 
+        # 4. Notifier producer — `skill.approved` to the contributor.
+        #    Fire-and-forget; Cosmos write above is the source of truth.
+        await enqueue_notification(
+            build_event(
+                "skill.approved",
+                skill_id=skill_id,
+                contributor_email=doc.uploader,
+                payload={
+                    "skill_id": skill_id,
+                    "version": doc.version,
+                    "name": doc.name,
+                    "approver": actor,
+                    "checksum": checksum,
+                },
+                idempotency_key=make_idempotency_key(
+                    "skill.approved",
+                    skill_id=skill_id,
+                    version=doc.version,
+                    extra=doc.id,
+                ),
+            ),
+            redis=redis,
+        )
+
         return doc
 
 
@@ -127,6 +156,7 @@ async def reject(
     reason: str,
     skills: ContainerProxy,
     audit: ContainerProxy,
+    redis: Redis | None = None,
 ) -> SkillDoc:
     """Mark a skill rejected with a manager-provided reason."""
     bind(skill_id=skill_id, actor=actor)
@@ -148,6 +178,33 @@ async def reject(
         after={"status": "rejected"},
         metadata={"reason": reason},
     )
+
+    # Notifier producer — `skill.rejected` to the contributor.
+    # `redis` is optional so older test call sites that pre-date M5-6
+    # continue to work without a fake Redis.
+    if redis is not None:
+        await enqueue_notification(
+            build_event(
+                "skill.rejected",
+                skill_id=skill_id,
+                contributor_email=doc.uploader,
+                payload={
+                    "skill_id": skill_id,
+                    "version": doc.version,
+                    "name": doc.name,
+                    "reason": reason,
+                    "rejector": actor,
+                },
+                idempotency_key=make_idempotency_key(
+                    "skill.rejected",
+                    skill_id=skill_id,
+                    version=doc.version,
+                    extra=doc.id,
+                ),
+            ),
+            redis=redis,
+        )
+
     return doc
 
 

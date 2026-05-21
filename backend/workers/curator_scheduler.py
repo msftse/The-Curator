@@ -44,6 +44,11 @@ from backend.core.redis import get_redis
 from backend.services import curator as curator_svc
 from backend.services import curator_review as curator_review_svc
 from backend.services.llm import FoundryLLMProvider, LLMProvider
+from backend.services.notifier import (
+    build_event,
+    enqueue_notification,
+    make_idempotency_key,
+)
 
 log = get_logger(__name__)
 
@@ -74,6 +79,19 @@ async def _run_one_pass(
 ) -> int:
     """Run the deterministic + (optional) review pass once. Returns exit code."""
     exit_code = 0
+    digest_payload: dict[str, object] = {
+        "dry_run": dry_run,
+        "actor": actor,
+        "transitions_total": 0,
+        "transitions_applied": 0,
+        "snapshot_name": None,
+        "skipped_pinned": 0,
+        "deterministic_error": None,
+        "review_error": None,
+        "review_proposals": 0,
+        "review_aborted_reason": None,
+        "run_id": None,
+    }
     try:
         record = await curator_svc.execute_pass(
             dry_run=dry_run,
@@ -85,6 +103,13 @@ async def _run_one_pass(
             settings=settings,
             actor=actor,
         )
+        digest_payload["run_id"] = record.run_id
+        digest_payload["transitions_total"] = len(record.transitions)
+        digest_payload["transitions_applied"] = sum(
+            1 for t in record.transitions if getattr(t, "applied", False)
+        )
+        digest_payload["snapshot_name"] = record.snapshot_name
+        digest_payload["skipped_pinned"] = len(record.skipped_pinned)
         log.info(
             "curator_scheduler_pass_done",
             extra={
@@ -95,12 +120,15 @@ async def _run_one_pass(
         )
     except CuratorPaused:
         log.info("curator_scheduler_paused")
+        digest_payload["deterministic_error"] = "paused"
     except LockUnavailable:
         log.info("curator_scheduler_lock_busy")
+        digest_payload["deterministic_error"] = "lock_busy"
         # Lock contention is not a hard failure — another pass holds it. Exit
         # 0 so K8s does not retry-storm.
     except Exception as exc:  # noqa: BLE001
         log.exception("curator_scheduler_error", extra={"err": str(exc)})
+        digest_payload["deterministic_error"] = str(exc)
         exit_code = 1
 
     if review_provider is not None:
@@ -116,6 +144,8 @@ async def _run_one_pass(
                 settings=settings,
                 actor=actor,
             )
+            digest_payload["review_proposals"] = review_rec.proposals_emitted
+            digest_payload["review_aborted_reason"] = review_rec.aborted_reason
             log.info(
                 "curator_review_scheduler_pass_done",
                 extra={
@@ -126,7 +156,27 @@ async def _run_one_pass(
             )
         except Exception as exc:  # noqa: BLE001
             log.exception("curator_review_scheduler_error", extra={"err": str(exc)})
+            digest_payload["review_error"] = str(exc)
             exit_code = 1
+
+    # M5-6: fire the weekly digest event at the end of every pass.
+    # The notifier de-dupes on idempotency_key; we key on the run_id (or
+    # a per-pass timestamp fallback) so concurrent / replayed scheduler
+    # ticks collapse to a single email.
+    run_id = digest_payload["run_id"] or f"adhoc-{actor}"
+    await enqueue_notification(
+        build_event(
+            "curator.weekly_report",
+            skill_id=None,
+            payload=digest_payload,
+            idempotency_key=make_idempotency_key(
+                "curator.weekly_report",
+                skill_id=None,
+                extra=str(run_id),
+            ),
+        ),
+        redis=redis,
+    )
 
     return exit_code
 

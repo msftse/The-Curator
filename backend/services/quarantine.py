@@ -50,6 +50,11 @@ from backend.core.redis import key_cache_item, key_cache_list
 from backend.models.skill import SkillDoc
 from backend.services import audit as audit_svc
 from backend.services.cosmos_helpers import replace_with_etag_retry
+from backend.services.notifier import (
+    build_event,
+    enqueue_notification,
+    make_idempotency_key,
+)
 
 log = get_logger(__name__)
 
@@ -234,6 +239,31 @@ async def quarantine_skill(
     # 4. Cache invalidation — LAST, non-fatal (AGENTS.md §4 rule 2).
     with contextlib.suppress(RedisError, Exception):
         await redis.delete(key_cache_list(), key_cache_item(doc.skill_id))
+
+    # 5. Notifier producer — `skill.quarantined` to admins. Fire-and-forget;
+    #    Cosmos write (step 2) is the source of truth.
+    await enqueue_notification(
+        build_event(
+            "skill.quarantined",
+            skill_id=skill_id,
+            payload={
+                "skill_id": skill_id,
+                "version": doc.version,
+                "name": doc.name,
+                "quarantined_by": actor,
+                "justification": justification,
+                "defender_severity": doc.defender_severity,
+                "expires_at": expires_at.isoformat(),
+            },
+            idempotency_key=make_idempotency_key(
+                "skill.quarantined",
+                skill_id=skill_id,
+                version=doc.version,
+                extra=doc.id,
+            ),
+        ),
+        redis=redis,
+    )
 
     log.info(
         "quarantine_complete",

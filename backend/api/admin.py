@@ -76,6 +76,7 @@ async def reject_skill(
     user: User = Depends(_require_admin),
     skills: ContainerProxy = Depends(get_skills_container),
     audit: ContainerProxy = Depends(get_audit_container),
+    redis: Redis = Depends(get_redis_client),
 ) -> SkillListItem:
     doc = await publish_svc.reject(
         skill_id=skill_id,
@@ -84,6 +85,7 @@ async def reject_skill(
         reason=body.reason,
         skills=skills,
         audit=audit,
+        redis=redis,
     )
     return _to_item(doc)
 

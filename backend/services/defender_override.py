@@ -48,6 +48,11 @@ from backend.core.redis import key_cache_item, key_cache_list
 from backend.models.skill import SkillDoc
 from backend.services import audit as audit_svc
 from backend.services.cosmos_helpers import replace_with_etag_retry
+from backend.services.notifier import (
+    build_event,
+    enqueue_notification,
+    make_idempotency_key,
+)
 
 log = get_logger(__name__)
 
@@ -97,8 +102,7 @@ async def override_defender(
     min_chars = settings.quarantine_min_justification_chars
     if len(justification) < min_chars:
         raise JustificationRequired(
-            f"justification must be at least {min_chars} characters; "
-            f"got {len(justification)}",
+            f"justification must be at least {min_chars} characters; got {len(justification)}",
             metadata={"min_chars": min_chars, "got_chars": len(justification)},
         )
 
@@ -170,6 +174,31 @@ async def override_defender(
     # Cache invalidation — LAST, non-fatal (AGENTS.md §4 rule 2).
     with contextlib.suppress(RedisError, Exception):
         await redis.delete(key_cache_list(), key_cache_item(doc.skill_id))
+
+    # Notifier producer — `admin.override` to other admins (who overrode
+    # what). Fire-and-forget; Cosmos write above is the source of truth.
+    await enqueue_notification(
+        build_event(
+            "admin.override",
+            skill_id=skill_id,
+            payload={
+                "skill_id": skill_id,
+                "version": doc.version,
+                "name": doc.name,
+                "overridden_by": actor,
+                "justification": justification,
+                "defender_severity": doc.defender_severity,
+                "overridden_at": now.isoformat(),
+            },
+            idempotency_key=make_idempotency_key(
+                "admin.override",
+                skill_id=skill_id,
+                version=doc.version,
+                extra=doc.id,
+            ),
+        ),
+        redis=redis,
+    )
 
     log.info(
         "defender_override_complete",

@@ -47,7 +47,6 @@ from backend.core.logging import bind, configure_logging, get_logger
 from backend.core.redis import (
     key_cache_item,
     key_queue_defender,
-    key_queue_notifications,
 )
 from backend.core.telemetry import configure_telemetry
 from backend.models.defender import (
@@ -60,6 +59,11 @@ from backend.models.skill import SkillDoc
 from backend.services import audit as audit_svc
 from backend.services.defender import make_scanner
 from backend.services.defender.scanner import DefenderTooLarge
+from backend.services.notifier import (
+    build_event,
+    enqueue_notification,
+    make_idempotency_key,
+)
 
 log = get_logger(__name__)
 
@@ -223,21 +227,56 @@ async def process_one(
     with contextlib.suppress(Exception):
         await redis.delete(key_cache_item(skill_id))
 
-    # Placeholder push to the notifier queue. M5-5 will give this a real
-    # NotificationEvent shape; for now the doc_id + event_type are enough for
-    # downstream wiring and back-pressure metrics.
-    import json
-
-    event = {
-        "event_type": "defender.completed",
-        "doc_id": doc.id,
-        "skill_id": skill_id,
-        "defender_status": final_status,
-        "defender_severity": str(report.overall_severity),
-        "at": datetime.now(UTC).isoformat(),
-    }
-    with contextlib.suppress(Exception):
-        await redis.rpush(key_queue_notifications(), json.dumps(event))
+    # M5-6: emit a real notifier event. The two interesting outcomes from
+    # the admin's perspective are:
+    #   * defender_status == 'clean'   → skill is now awaiting normal review
+    #   * defender_status == 'flagged' → admins need to see the report and
+    #                                    either override or quarantine
+    # `failed` is operational noise; the janitor sweep re-queues it and the
+    # admin sees `defender_status=failed` in the UI without needing email.
+    if final_status == "clean":
+        await enqueue_notification(
+            build_event(
+                "skill.awaiting_review",
+                skill_id=skill_id,
+                payload={
+                    "skill_id": skill_id,
+                    "version": doc.version,
+                    "name": doc.name,
+                    "defender_severity": str(report.overall_severity),
+                    "uploader": doc.uploader,
+                },
+                idempotency_key=make_idempotency_key(
+                    "skill.awaiting_review",
+                    skill_id=skill_id,
+                    version=doc.version,
+                    extra=doc.id,
+                ),
+            ),
+            redis=redis,
+        )
+    elif final_status == "flagged":
+        await enqueue_notification(
+            build_event(
+                "defender.flagged",
+                skill_id=skill_id,
+                payload={
+                    "skill_id": skill_id,
+                    "version": doc.version,
+                    "name": doc.name,
+                    "defender_severity": str(report.overall_severity),
+                    "findings_count": len(report.findings),
+                    "uploader": doc.uploader,
+                },
+                idempotency_key=make_idempotency_key(
+                    "defender.flagged",
+                    skill_id=skill_id,
+                    version=doc.version,
+                    extra=doc.id,
+                ),
+            ),
+            redis=redis,
+        )
 
     log.info(
         "defender_ok",
