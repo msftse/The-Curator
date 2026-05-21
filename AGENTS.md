@@ -125,6 +125,45 @@ the deletion callsite there — analogous to `move_published_to_archive`.
 Until then the gate already lists the placeholder path so adding the file
 is a one-line allowlist change, not an architectural decision re-litigation.
 
+**Status (M5-3 landed).** `backend/services/quarantine_janitor.py` is now
+the guarded janitor file. Its lone `delete_blob` callsite lives inside
+`move_to_deleted_after_retention(...)` and is the only allowed delete
+in the entire skill data plane besides `move_published_to_archive`. Any
+new delete code path near skills, bundles, or quarantine bytes must
+follow the same pattern: a single named function, a verification
+precondition, and an audit row with `actor='system:quarantine_janitor'`.
+
+---
+
+### Defender + Notifier workers (M5)
+
+Two new background workers ship in M5. They follow the same conventions
+as the classifier worker (§4 rule #4): a `process_one(...)` entry-point
+for unit/integration tests, a long-running `main()` BLPOP loop for the
+deployed image, Cosmos-first writes, and Redis as ephemeral queue only.
+
+- **Defender** (`backend/workers/defender.py`) — consumes
+  `queue:defender`, scans the staged bundle bytes via Microsoft Foundry
+  (LLM-only, no AV engine), writes `defender_status` /
+  `defender_severity` / `defender_report` to the Cosmos skill doc, and
+  emits one notifier event per terminal outcome (`skill.awaiting_review`
+  on clean, `defender.flagged` on flagged). The fake provider
+  (`FakeDefenderScanner`) keeps unit + CI green without Foundry creds.
+- **Notifier** (`backend/workers/notifier.py`) — consumes
+  `queue:notifications`, resolves recipients (contributor email from
+  the skill doc; admin recipients via Microsoft Graph admin-group
+  lookup cached in Redis), renders the per-event template, and sends
+  through ACS email. Idempotency is enforced by a Redis `SET NX`
+  dedupe lock on `notif:sent:{idempotency_key}` so replays are no-ops.
+  Both ACS and Graph have fake clients used by every test that doesn't
+  require live cloud calls.
+
+Producer call-sites (M5-6) live next to the Cosmos write they're
+about, never inside the worker. The standard pattern is `await
+enqueue_notification(build_event(...), redis=redis)` inside a
+`contextlib.suppress` so notifier failure can never roll back the
+source-of-truth Cosmos write.
+
 ---
 
 ## 6. Local-First Dev Loop

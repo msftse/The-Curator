@@ -561,6 +561,44 @@ The MVP is successful when a contributor can upload a SKILL.md on a local dev st
 
 **Validation:** Synthetic load test passes SLOs; runbook dry-run completes end-to-end.
 
+### Phase M5 — Defender, quarantine, notifier (target: +1 week)
+**Goal:** Add an LLM-based malicious-bundle scanner, an admin-controlled
+quarantine carve-out, and a notification fan-out so the review and
+lifecycle flows actually reach humans. Full plan:
+`.agents/plans/m5-defender-quarantine-notifier.md`.
+
+**Deliverables:**
+- ✅ `quarantine/` Blob container — the ONE delete-after-N-days exception
+  in the system; everything else stays archive-only (AGENTS.md §5).
+- ✅ Defender worker (`backend/workers/defender.py`) — BLPOPs
+  `queue:defender`, runs an LLM scan against Microsoft Foundry, writes
+  `defender_status`/`defender_severity`/`defender_report` to Cosmos.
+  Fake provider keeps unit + integration tests cheap.
+- ✅ Quarantine service + admin endpoint
+  (`POST /v1/admin/skills/{id}/quarantine`) with mandatory
+  justification; bytes copy to `quarantine/`, status flips to
+  `quarantined`, audit row recorded with `source=admin_manual`.
+- ✅ Quarantine janitor (`backend/services/quarantine_janitor.py`) —
+  guarded `delete_blob` allowlist in the AST gate; deletes bundles
+  past `quarantine_expires_at`, never the Cosmos doc.
+- ✅ Defender admin UI — report rendering, override-with-justification,
+  quarantine button surfaced in the review queue.
+- ✅ Notifier worker (`backend/workers/notifier.py`) — fan-out via ACS
+  email + Microsoft Graph admin-group lookup, with Redis dedupe locks
+  (`notif:sent:{idempotency_key}`) and Jinja-style templates per
+  event type. Fake ACS + fake Graph clients keep CI offline.
+- ✅ Producers wired across upload, classifier, defender, publish,
+  reject, quarantine, override, curator — every M5 event type emits
+  at the corresponding callsite.
+- ✅ Curator schedule admin UI + reconcile-to-CronJob worker —
+  Cosmos-backed schedule doc (`system_state/curator_schedule`) with a
+  GET/PUT admin pair; a reconciler worker annotates the K8s CronJob.
+
+**Validation:** Local emulator stack runs the M5-8 e2e tests
+(`backend/tests/e2e/test_m5_full_flow.py`) green; admin can quarantine
+a flagged skill end-to-end and receive a notifier event; curator
+schedule changes propagate to the CronJob annotation.
+
 ---
 
 ## 13. Future Considerations

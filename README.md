@@ -6,7 +6,15 @@
   Internal web platform for submitting, reviewing, publishing, and maintaining reusable agent skills.
 </div>
 
-**Status:** M0 POC scaffolded. Local end-to-end flow runs on emulators (zero Azure spend).
+**Status:** M5 in flight. M0–M4 complete; M5 ships the defender scanner, quarantine carve-out, notifier fan-out, and curator schedule UI. Local end-to-end flow runs on emulators (zero Azure spend).
+
+## What shipped in M5
+
+- 🛡 **Defender worker** (`backend/workers/defender.py`) — LLM-based bundle scanner running on Microsoft Foundry, writes `defender_status` / `defender_severity` / `defender_report` to Cosmos.
+- 🧯 **Quarantine carve-out** — `quarantine/` Blob container plus `POST /v1/admin/skills/{id}/quarantine` (mandatory justification). The ONE delete-after-N-days exception in the system; janitor (`backend/services/quarantine_janitor.py`) deletes expired bundles, never the Cosmos doc. Statically enforced by `backend/tests/unit/test_never_delete_invariant.py`.
+- 📣 **Notifier worker** (`backend/workers/notifier.py`) — Azure Communication Services email + Microsoft Graph admin-group resolution, Redis dedupe lock on `idempotency_key`, per-event templates. Eight producer call-sites wired (upload, classify, defender clean/flagged, approve/publish, reject, quarantine, override).
+- 🗓 **Curator schedule UI** — Cosmos-backed `system_state/curator_schedule` doc with `GET/PUT /v1/admin/curator/schedule`, an admin editor in the frontend, and a reconciler worker that annotates the K8s CronJob.
+- 🧪 **End-to-end smoke** — `scripts/smoke_m5.sh` brings up the docker compose stack and runs `backend/tests/e2e/test_m5_full_flow.py` against it.
 
 ## Docs
 
