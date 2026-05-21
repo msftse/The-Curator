@@ -141,6 +141,17 @@ def key_queue_classifier() -> str:
     return "queue:classifier"
 
 
+def key_queue_defender() -> str:
+    """M5-2: defender scan queue. Producers: classifier worker (on success).
+    Consumer: defender worker (BLPOP loop)."""
+    return "queue:defender"
+
+
+def key_queue_notifications() -> str:
+    """M5-5: notifier queue. Placeholder producer in M5-2 (defender worker)."""
+    return "queue:notifications"
+
+
 def key_lock_publish(skill_id: str) -> str:
     return f"lock:publish:{skill_id}"
 

@@ -7,8 +7,13 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-SkillStatus = Literal["pending", "classified", "approved", "rejected", "stale", "archived"]
+SkillStatus = Literal[
+    "pending", "classified", "approved", "rejected", "stale", "archived", "quarantined"
+]
 ClassifierStatus = Literal["queued", "running", "done", "failed"]
+# M5-2: defender state machine. `pending` → `scanning` → `clean`|`flagged`|`failed`.
+# Worker re-tries `pending`/`failed` via the janitor sweep.
+DefenderStatus = Literal["pending", "scanning", "clean", "flagged", "failed"]
 
 
 # Canonical category taxonomy (PRD §7.2). The upload UI dropdown, the
@@ -96,3 +101,16 @@ class SkillDoc(BaseModel):
     # M0 ONLY: raw uploaded tar bytes live here (base64) until publish.
     # M1 will replace with a `staging/` Blob container — see publish.py TODO.
     pending_bundle_b64: str | None = None
+
+    # ---- Defender (M5-2) ----
+    # `pending` is the initial state at upload time. Set to `scanning` while
+    # the defender worker is running, then `clean` / `flagged` / `failed`.
+    # `defender_report` is the inline DefenderReport.model_dump() output (or
+    # None until the worker writes it). `defender_report_id` is reserved for
+    # the future ``defender_reports`` container; M5-2 stores the report
+    # inline and leaves the id null.
+    defender_status: DefenderStatus = "pending"
+    defender_severity: str | None = None  # mirror of report.overall_severity for filters
+    defender_report: dict | None = None
+    defender_report_id: str | None = None
+    defender_scanned_at: datetime | None = None

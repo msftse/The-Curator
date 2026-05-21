@@ -125,6 +125,21 @@ class Settings(BaseSettings):
     classifier_queue_key: str = "queue:classifier"
     classifier_blpop_timeout_seconds: int = 5
 
+    # ---- Defender (M5-2) ----
+    # Provider toggle. `foundry` calls Azure AI Foundry via the shared
+    # `FoundryLLMProvider`. `fake` is test-only — returns deterministic
+    # canned reports from `FakeDefenderProvider`.
+    defender_provider: Literal["foundry", "fake"] = "fake"
+    defender_model: str = "gpt-4o"
+    # Hard cap on the user-prompt char budget (≈4 chars/token). When the
+    # concatenated bundle exceeds this, the scanner short-circuits with
+    # `defender_status=failed` and a finding `rule=skill.too_large`.
+    defender_max_tokens_input: int = 32_000
+    defender_max_tokens_output: int = 2000
+    defender_queue_key: str = "queue:defender"
+    defender_blpop_timeout_seconds: int = 5
+    notifications_queue_key: str = "queue:notifications"
+
     # ---- Cache TTLs (seconds) ----
     cache_list_ttl_seconds: int = 60
     cache_item_ttl_seconds: int = 300
