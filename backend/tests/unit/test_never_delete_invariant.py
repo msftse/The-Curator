@@ -82,6 +82,14 @@ _GUARDED_FILES = [
     # M5-4 — Defender admin override. Cosmos-only flip + audit row; no
     # blob mutations, no Cosmos deletes.
     "backend/services/defender_override.py",
+    # M5-5 — Notifier worker. Pure consumer; no Cosmos / Blob mutations
+    # beyond an append-only audit row. Redis is queue + dedupe TTL +
+    # recipient cache only (every key has a TTL).
+    "backend/services/notifier/__init__.py",
+    "backend/services/notifier/acs.py",
+    "backend/services/notifier/graph.py",
+    "backend/services/notifier/templates/__init__.py",
+    "backend/workers/notifier.py",
 ]
 
 # `delete_item` is *always* forbidden (Cosmos delete = data loss).
