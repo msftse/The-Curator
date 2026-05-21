@@ -31,6 +31,11 @@ from backend.services.notifier.graph import (
     GraphClient,
     make_graph_client,
 )
+from backend.services.notifier.producers import (
+    build_event,
+    enqueue_notification,
+    make_idempotency_key,
+)
 from backend.services.notifier.templates import (
     SUPPORTED_EVENT_TYPES,
     render_template,
@@ -43,7 +48,10 @@ __all__ = [
     "FakeAcsEmailClient",
     "FakeGraphClient",
     "GraphClient",
+    "build_event",
+    "enqueue_notification",
     "make_acs_client",
     "make_graph_client",
+    "make_idempotency_key",
     "render_template",
 ]

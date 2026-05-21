@@ -88,6 +88,7 @@ _GUARDED_FILES = [
     "backend/services/notifier/__init__.py",
     "backend/services/notifier/acs.py",
     "backend/services/notifier/graph.py",
+    "backend/services/notifier/producers.py",
     "backend/services/notifier/templates/__init__.py",
     "backend/workers/notifier.py",
 ]
