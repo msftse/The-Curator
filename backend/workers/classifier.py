@@ -25,7 +25,7 @@ from backend.core.cosmos import (
     get_cosmos_client,
 )
 from backend.core.logging import bind, configure_logging, get_logger
-from backend.core.redis import key_cache_item, key_queue_classifier
+from backend.core.redis import key_cache_item, key_queue_classifier, key_queue_defender
 from backend.core.telemetry import configure_telemetry
 from backend.models.skill import Classification, SkillDoc
 from backend.services import audit as audit_svc
@@ -120,6 +120,14 @@ async def process_one(
             },
         )
         log.info("classify_ok", extra={"category": result.category})
+        # M5-2: hand the doc off to the defender scan queue. Cosmos write
+        # above is the source of truth; if this RPUSH fails the janitor
+        # sweep will re-queue based on `defender_status=pending` age
+        # (AGENTS.md §4 rule 4 mitigation, same shape as the upload path).
+        try:
+            await redis.rpush(key_queue_defender(), doc.id)
+        except Exception as exc:  # pragma: no cover — defensive
+            log.warning("defender_enqueue_failed", extra={"err": str(exc)})
     except Exception as exc:
         log.exception("classify_failed")
         doc.classifier_status = "failed"
