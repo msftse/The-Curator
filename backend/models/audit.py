@@ -46,6 +46,10 @@ AuditAction = Literal[
     "review_reject",
     # Entra migration — first observed admin sign-in per day (Redis SETNX, 24h TTL).
     "admin_session_start",
+    # M5-7 — admin edited the curator CronJob schedule via the admin UI.
+    # Cosmos `system_state` (key=curator_schedule) is the source of truth;
+    # the reconciler worker patches the K8s CronJob spec to match.
+    "curator_schedule_update",
 ]
 
 
