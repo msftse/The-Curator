@@ -2,6 +2,8 @@
 import { call, callText } from "./client";
 import type {
   CuratorRunRecord,
+  CuratorSchedule,
+  CuratorScheduleUpdate,
   CuratorStatus,
   ReviewListResponse,
   ReviewProposal,
@@ -13,6 +15,17 @@ import type {
 export const curator = {
   status(): Promise<CuratorStatus> {
     return call<CuratorStatus>("/v1/admin/curator/status");
+  },
+  // ---- M5-7 schedule editor --------------------------------------------
+  getSchedule(): Promise<CuratorSchedule> {
+    return call<CuratorSchedule>("/v1/admin/curator/schedule");
+  },
+  putSchedule(body: CuratorScheduleUpdate): Promise<CuratorSchedule> {
+    return call<CuratorSchedule>("/v1/admin/curator/schedule", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
   },
   pause(): Promise<CuratorStatus> {
     return call<CuratorStatus>("/v1/admin/curator/pause", { method: "POST" });

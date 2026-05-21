@@ -185,6 +185,23 @@ export interface SnapshotListItem {
   size_bytes: number;
 }
 
+// ---- M5-7 — Curator schedule -------------------------------------------
+
+export interface CuratorSchedule {
+  cron: string;
+  timezone: string;
+  enabled: boolean;
+  updated_by: string | null;
+  updated_at: string;
+}
+
+export interface CuratorScheduleUpdate {
+  cron: string;
+  timezone: string;
+  enabled: boolean;
+  mode: "weekly" | "custom";
+}
+
 // ---- Curator review (M3) ------------------------------------------------
 
 export type ProposalKind = "patch" | "merge" | "keep";
