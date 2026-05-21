@@ -5,9 +5,39 @@ export type SkillStatus =
   | "approved"
   | "rejected"
   | "stale"
-  | "archived";
+  | "archived"
+  | "quarantined";
 
 export type ClassifierStatus = "queued" | "running" | "done" | "failed";
+
+// M5-2 defender state machine. `flagged` = scanner emitted findings;
+// `failed` = scanner crashed (janitor will re-queue).
+export type DefenderStatus =
+  | "pending"
+  | "scanning"
+  | "clean"
+  | "flagged"
+  | "failed";
+
+export type DefenderSeverity = "clean" | "low" | "medium" | "high" | "critical";
+
+export interface DefenderFinding {
+  rule: string;
+  severity: "low" | "medium" | "high" | "critical";
+  location: string;
+  excerpt: string;
+  explanation: string;
+}
+
+export interface DefenderReport {
+  overall_severity: DefenderSeverity;
+  findings: DefenderFinding[];
+  model: string;
+  scanned_at: string;
+  scan_duration_ms: number;
+  token_usage: { input_tokens: number; output_tokens: number };
+  notes?: string;
+}
 
 export interface Classification {
   category: string;
@@ -49,6 +79,17 @@ export interface SkillListItem {
 
 export interface SkillDetail extends SkillListItem {
   skill_md_text: string | null;
+  // M5-4 defender + quarantine surface. The admin detail page renders
+  // `defender_report` directly; non-admin readers see the badge but no
+  // override controls.
+  defender_status?: DefenderStatus;
+  defender_severity?: DefenderSeverity | null;
+  defender_report?: DefenderReport | null;
+  defender_scanned_at?: string | null;
+  quarantined_at?: string | null;
+  quarantined_by?: string | null;
+  quarantine_justification?: string | null;
+  quarantine_expires_at?: string | null;
 }
 
 export interface UsageEventBody {

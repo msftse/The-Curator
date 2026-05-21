@@ -214,6 +214,35 @@ export const api = {
         body: JSON.stringify({ reason }),
       });
     },
+    quarantine(skillId: string, justification: string): Promise<SkillListItem> {
+      // M5-3 — admin moves a defender-flagged skill into the terminal
+      // `quarantine/` blob container. Backend requires
+      // `defender_status='flagged'` (DEFENDER_NOT_FLAGGED) and a
+      // justification ≥20 chars (JUSTIFICATION_REQUIRED). Pinned skills
+      // are refused (SKILL_PINNED).
+      return call<SkillListItem>(`/v1/admin/skills/${skillId}/quarantine`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ justification }),
+      });
+    },
+    defenderOverride(
+      skillId: string,
+      justification: string,
+    ): Promise<SkillListItem> {
+      // M5-4 — admin overrides a defender finding. Backend flips
+      // defender_status flagged → clean (skill `status` unchanged) and
+      // writes an audit row with the justification. Same precondition
+      // matrix as quarantine.
+      return call<SkillListItem>(
+        `/v1/admin/skills/${skillId}/defender-override`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ justification }),
+        },
+      );
+    },
   },
   catalog: {
     list(): Promise<SkillListItem[]> {
