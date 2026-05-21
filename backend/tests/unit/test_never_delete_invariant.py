@@ -60,6 +60,16 @@ _GUARDED_FILES = [
     "backend/services/k8s_jobs.py",
 ]
 
+# M5 placeholder — the quarantine janitor (M5-3) will be the ONE allowed
+# exception to the delete-blob prohibition outside `move_published_to_archive`,
+# because quarantine is the only container where delete-after-N-days is
+# permitted (AGENTS.md §5). The file does not exist yet; when M5-3 lands,
+# move this entry from `_M5_PLACEHOLDER_FILES` into `_GUARDED_FILES` AND
+# extend `_BLOB_DELETE_ALLOWED_SITES` with the new `(path, fn_name)` pair.
+_M5_PLACEHOLDER_FILES = [
+    "backend/services/quarantine_janitor.py",
+]
+
 # `delete_item` is *always* forbidden (Cosmos delete = data loss).
 _FORBIDDEN_ALWAYS = {"delete_item"}
 
@@ -151,3 +161,24 @@ def test_move_published_to_archive_does_call_delete_blob() -> None:
         f"(AGENTS.md §5 'archive = move'); none found. The verified-move "
         f"contract may have regressed to copy-only."
     )
+
+
+def test_m5_quarantine_janitor_placeholder_documented() -> None:
+    """Track the M5-3 quarantine janitor without forcing it to exist yet.
+
+    AGENTS.md §5 carves quarantine out as the ONE container where
+    delete-after-N-days is permitted. The janitor that performs that
+    deletion will land in M5-3. This test is a structural reminder: when
+    the file appears on disk, the gate above MUST be updated to include
+    it in `_GUARDED_FILES` AND `_BLOB_DELETE_ALLOWED_SITES` (or whatever
+    multi-site mechanism replaces the single-tuple constant), so the
+    new file doesn't bypass the AST scan.
+    """
+    for rel in _M5_PLACEHOLDER_FILES:
+        path = _ROOT / rel
+        if path.exists():
+            pytest.fail(
+                f"{rel} now exists — promote it from _M5_PLACEHOLDER_FILES "
+                f"into _GUARDED_FILES and add its single allowed delete callsite "
+                f"to the blob-delete allowlist (mirroring `move_published_to_archive`)."
+            )

@@ -109,6 +109,22 @@ If you are tempted to add **any other** delete code path near skills or bundles:
 
 This invariant is enforced statically by `backend/tests/unit/test_never_delete_invariant.py`, which AST-scans the curator/rollback/snapshot/usage/janitor service + worker files for `delete_item(...)` and `delete_blob(...)` calls. The scan is scope-aware: `delete_blob` inside the body of `move_published_to_archive` is allowed; everywhere else is a hard test failure. `delete_item` is still forbidden everywhere.
 
+### Quarantine (M5) — the one delete-after-N-days exception
+
+The `quarantine/` blob container (provisioned in `infra/modules/storage.bicep`,
+created locally by `scripts/bootstrap_blob_containers.py`) holds bundles an
+admin has rejected as malicious. It is the ONE place in the system where
+delete-after-N-days is permitted, and it is owned by a dedicated quarantine
+janitor (landing in M5-3 at `backend/services/quarantine_janitor.py`). All
+other delete prohibitions stand: the curator, snapshot, usage, and main
+janitor code remain forbidden from `delete_blob` / `delete_item`.
+
+When M5-3 lands, the AST gate (`test_never_delete_invariant.py`) gains the
+quarantine janitor as a *guarded* file with its own narrow allowlist for
+the deletion callsite there — analogous to `move_published_to_archive`.
+Until then the gate already lists the placeholder path so adding the file
+is a one-line allowlist change, not an architectural decision re-litigation.
+
 ---
 
 ## 6. Local-First Dev Loop
