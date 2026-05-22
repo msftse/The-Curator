@@ -287,3 +287,14 @@ export interface ReviewListResponse {
   proposals: ReviewProposal[];
   total: number;
 }
+
+
+export interface JanitorQueueResult {
+  scanned: number;
+  requeued: number;
+}
+
+export interface JanitorResult {
+  classifier: JanitorQueueResult;
+  defender: JanitorQueueResult;
+}

@@ -5,6 +5,7 @@ import type {
   CuratorSchedule,
   CuratorScheduleUpdate,
   CuratorStatus,
+  JanitorResult,
   ReviewListResponse,
   ReviewProposal,
   RollbackResult,
@@ -44,6 +45,9 @@ export const curator = {
     return call<RollbackResult>(`/v1/admin/curator/rollback${q}`, {
       method: "POST",
     });
+  },
+  janitor(): Promise<JanitorResult> {
+    return call<JanitorResult>("/v1/admin/curator/janitor", { method: "POST" });
   },
   pin(skillId: string): Promise<SkillListItem> {
     return call<SkillListItem>(
