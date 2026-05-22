@@ -1,10 +1,48 @@
-<div align="center">
-  <img src="docs/brand-icon.png" alt="Agentic Skill Hub" width="128" height="128" />
+<p align="center">
+  <img src="docs/assets/banner.webp" alt="The Curator — governed skills for agents" width="820" />
+</p>
 
-  # The Curator
+<h1 align="center">The Curator</h1>
 
-  Internal web platform for submitting, reviewing, publishing, and maintaining reusable agent skills.
-</div>
+<p align="center">
+  <b>Governed skills for agents.</b> A self-cleaning skill hub for agent harnesses —
+  classifies and rates every upload, scans for prompt injection, versions the approved
+  ones in an immutable catalog, and runs a weekly curator that prunes dead skills,
+  refines drift, and retags. Event-driven on Azure, scaled with KEDA, notifications
+  through ACS.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/status-M5-00ff88?style=flat-square" alt="status: M5" />
+  <img src="https://img.shields.io/badge/backend-FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI" />
+  <img src="https://img.shields.io/badge/frontend-Next.js%2014-000?style=flat-square&logo=nextdotjs" alt="Next.js" />
+  <img src="https://img.shields.io/badge/store-Cosmos%20DB-0078D4?style=flat-square&logo=microsoftazure&logoColor=white" alt="Cosmos DB" />
+  <img src="https://img.shields.io/badge/cache-Redis-DC382D?style=flat-square&logo=redis&logoColor=white" alt="Redis" />
+  <img src="https://img.shields.io/badge/scale-KEDA-326CE5?style=flat-square&logo=kubernetes&logoColor=white" alt="KEDA" />
+  <img src="https://img.shields.io/badge/license-internal-1f3a26?style=flat-square" alt="license" />
+</p>
+
+<p align="center">
+  <a href="docs/PRD.md"><b>📚 PRD</b></a> ·
+  <a href="docs/ARCHITECTURE.md"><b>🏗 Architecture</b></a> ·
+  <a href="AGENTS.md"><b>📐 Conventions</b></a> ·
+  <a href="docs/architecture.excalidraw"><b>🖼 Diagram</b></a> ·
+  <a href="scripts/smoke_m5.sh"><b>🧪 E2E smoke</b></a>
+</p>
+
+---
+
+# Why The Curator
+
+* 🧠 **Skill libraries rot.** Six months in, every harness fills with duplicates, stale prompts, deprecated APIs, and one bad skill silently overriding three good ones. Your agent gets dumber and nobody can explain why.
+* 🏷 **Classifier rates every upload.** Auto-tags, scores, and routes new skills through Microsoft Foundry. Quality signal before a human ever clicks review.
+* 🛡 **Defender scans before approval.** LLM-based bundle scanner catches prompt injection and tainted content. Flagged skills go straight to a `quarantine/` Blob container — the ONE delete-after-N-days exception in the system, statically enforced.
+* 📦 **Immutable catalog.** Approved skills are versioned in Cosmos and shipped as `published/{skill_id}/{version}/bundle.tar.gz`. Never overwritten, snapshotted before every curator pass.
+* 🧹 **Curator runs weekly.** Prunes dead skills (no loads in 30d → stale, 90d → archived), refines drift, retags. **Never deletes** without an immutable copy elsewhere. Pinned skills are immune.
+* 📣 **Notifier closes the loop.** Azure Communication Services email for every terminal event (upload, classify, defender clean/flagged, approve, reject, quarantine, override) plus a weekly admin report of what the curator did and why.
+* ⚙️ **Event-driven & scalable.** Storage queues + KEDA autoscale on classifier and defender workers. Reconciler keeps the K8s CronJob schedule in sync with the admin UI.
+* 🔒 **Never-delete invariant.** Two allowed delete callsites in the entire data plane (curator archive move + quarantine janitor expiry). Everything else is forbidden and the test suite enforces it via AST scan.
+
 
 **Status:** M5 in flight. M0–M4 complete; M5 ships the defender scanner, quarantine carve-out, notifier fan-out, and curator schedule UI. Local end-to-end flow runs on emulators (zero Azure spend).
 
