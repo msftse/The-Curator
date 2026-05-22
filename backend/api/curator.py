@@ -549,13 +549,20 @@ async def janitor(
     skills: ContainerProxy = Depends(get_skills_container),
     audit: ContainerProxy = Depends(get_audit_container),
     redis: Redis = Depends(get_redis_client),
-) -> dict[str, int]:
-    return await janitor_svc.janitor_classifier_queue(
+) -> dict[str, dict[str, int]]:
+    classifier_result = await janitor_svc.janitor_classifier_queue(
         skills=skills,
         audit=audit,
         redis=redis,
         settings=settings,
     )
+    defender_result = await janitor_svc.janitor_defender_queue(
+        skills=skills,
+        audit=audit,
+        redis=redis,
+        settings=settings,
+    )
+    return {"classifier": classifier_result, "defender": defender_result}
 
 
 # ---- M3 — Curator LLM review endpoints ---------------------------------

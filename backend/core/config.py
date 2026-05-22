@@ -194,6 +194,13 @@ class Settings(BaseSettings):
     curator_reports_container: str = "curator"
     usage_loaders_30d_window_days: int = 30
     janitor_classifier_stale_multiplier: int = 5
+    # Defender janitor — re-queues skill docs stuck in
+    # `defender_status in ('pending', 'failed')` whose latest defender
+    # touch is older than this multiplier × defender_blpop_timeout_seconds.
+    # Mirrors `janitor_classifier_stale_multiplier`. See AGENTS.md §4 rule
+    # #4 — Cosmos is the source of truth, the queue is best-effort, and
+    # the janitor reconciles lost messages.
+    janitor_defender_stale_multiplier: int = 60
 
     # ---- Runtime topology (M4) ----
     # `inprocess` (default): /v1/admin/curator/run invokes execute_pass()
