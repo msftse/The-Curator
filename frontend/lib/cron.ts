@@ -93,6 +93,8 @@ export function computeNextRun(expr: string, from: Date): Date | null {
   const doms = expand(dom, 1, 31);
   const mons = expand(mon, 1, 12);
   const dows = expand(dow, 0, 6);
+  const domRestricted = dom !== "*";
+  const dowRestricted = dow !== "*";
 
   const candidate = new Date(from.getTime());
   candidate.setSeconds(0, 0);
@@ -103,13 +105,27 @@ export function computeNextRun(expr: string, from: Date): Date | null {
     if (
       mins.has(candidate.getMinutes()) &&
       hours.has(candidate.getHours()) &&
-      doms.has(candidate.getDate()) &&
-      mons.has(candidate.getMonth() + 1) &&
-      dows.has(candidate.getDay())
+      matchesCronDay(
+        doms.has(candidate.getDate()),
+        dows.has(candidate.getDay()),
+        domRestricted,
+        dowRestricted,
+      ) &&
+      mons.has(candidate.getMonth() + 1)
     ) {
       return new Date(candidate.getTime());
     }
     candidate.setMinutes(candidate.getMinutes() + 1);
   }
   return null;
+}
+
+function matchesCronDay(
+  domMatches: boolean,
+  dowMatches: boolean,
+  domRestricted: boolean,
+  dowRestricted: boolean,
+): boolean {
+  if (domRestricted && dowRestricted) return domMatches || dowMatches;
+  return domMatches && dowMatches;
 }

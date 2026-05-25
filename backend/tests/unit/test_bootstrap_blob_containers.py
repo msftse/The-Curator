@@ -64,7 +64,7 @@ async def test_ensure_containers_creates_quarantine_alongside_others() -> None:
     await ensure_containers(svc, settings)  # type: ignore[arg-type]
 
     names_touched = {c.name for c in svc.handed_out}
-    # All four blob containers + the curator-reports one must be on the
+    # All primary blob containers + the curator-reports one must be on the
     # ensure list. Quarantine is the M5-1 deliverable; the rest are
     # regression guards.
     assert settings.blob_quarantine_container in names_touched

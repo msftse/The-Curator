@@ -25,6 +25,7 @@ import asyncio
 import contextlib
 import signal
 import sys
+from datetime import UTC, datetime
 
 from backend.core.blob import ensure_containers as ensure_blob_containers
 from backend.core.blob import get_blob_service
@@ -79,11 +80,22 @@ async def _run_one_pass(
 ) -> int:
     """Run the deterministic + (optional) review pass once. Returns exit code."""
     exit_code = 0
+    pass_started = datetime.now(UTC)
     digest_payload: dict[str, object] = {
         "dry_run": dry_run,
         "actor": actor,
+        "window_start": pass_started.isoformat(),
+        "window_end": pass_started.isoformat(),
+        "pass_count": 1,
         "transitions_total": 0,
         "transitions_applied": 0,
+        "transition_count": 0,
+        "stale_count": 0,
+        "archived_count": 0,
+        "snapshot_count": 0,
+        "error_count": 0,
+        "dry_run_diffs": 0,
+        "report_url": "",
         "snapshot_name": None,
         "skipped_pinned": 0,
         "deterministic_error": None,
@@ -108,8 +120,22 @@ async def _run_one_pass(
         digest_payload["transitions_applied"] = sum(
             1 for t in record.transitions if getattr(t, "applied", False)
         )
+        digest_payload["transition_count"] = digest_payload["transitions_applied"]
+        digest_payload["stale_count"] = sum(
+            1 for t in record.transitions if t.after == "stale" and getattr(t, "applied", False)
+        )
+        digest_payload["archived_count"] = sum(
+            1 for t in record.transitions if t.after == "archived" and getattr(t, "applied", False)
+        )
+        digest_payload["snapshot_count"] = 1 if record.snapshot_name else 0
+        digest_payload["dry_run_diffs"] = len(record.transitions) if dry_run else 0
         digest_payload["snapshot_name"] = record.snapshot_name
         digest_payload["skipped_pinned"] = len(record.skipped_pinned)
+        digest_payload["report_url"] = (
+            f"{settings.notifier_review_url_base.rstrip('/')}/admin/curator/runs/{record.run_id}"
+            if settings.notifier_review_url_base
+            else ""
+        )
         log.info(
             "curator_scheduler_pass_done",
             extra={
@@ -121,6 +147,7 @@ async def _run_one_pass(
     except CuratorPaused:
         log.info("curator_scheduler_paused")
         digest_payload["deterministic_error"] = "paused"
+        digest_payload["error_count"] = int(digest_payload["error_count"]) + 1
     except LockUnavailable:
         log.info("curator_scheduler_lock_busy")
         digest_payload["deterministic_error"] = "lock_busy"
@@ -129,6 +156,7 @@ async def _run_one_pass(
     except Exception as exc:  # noqa: BLE001
         log.exception("curator_scheduler_error", extra={"err": str(exc)})
         digest_payload["deterministic_error"] = str(exc)
+        digest_payload["error_count"] = int(digest_payload["error_count"]) + 1
         exit_code = 1
 
     if review_provider is not None:
@@ -157,7 +185,10 @@ async def _run_one_pass(
         except Exception as exc:  # noqa: BLE001
             log.exception("curator_review_scheduler_error", extra={"err": str(exc)})
             digest_payload["review_error"] = str(exc)
+            digest_payload["error_count"] = int(digest_payload["error_count"]) + 1
             exit_code = 1
+
+    digest_payload["window_end"] = datetime.now(UTC).isoformat()
 
     # M5-6: fire the weekly digest event at the end of every pass.
     # The notifier de-dupes on idempotency_key; we key on the run_id (or

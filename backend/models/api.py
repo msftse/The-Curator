@@ -64,7 +64,7 @@ class DownloadUrlResponse(BaseModel):
     """Short-lived SAS URL for a published bundle.
 
     The URL itself is the capability — once issued, the browser hits Azure
-    Blob directly (no further auth via the hub). Default TTL is 15 minutes
+    Blob directly (no further auth via the hub). Default TTL is 1 minute
     (see `backend.core.blob.signed_download_url`).
     """
 
