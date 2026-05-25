@@ -54,7 +54,7 @@ global:
   # image registry for all four images.
   imageRegistry: ""
 
-# All four images share the same tag (one git SHA per deploy).
+# All six images share the same tag (one git SHA per deploy).
 image:
   tag: "latest"
   pullPolicy: IfNotPresent

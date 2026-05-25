@@ -56,9 +56,8 @@ class Settings(BaseSettings):
     # M5 — terminal bucket for skills an admin has rejected as malicious.
     # The ONE container in the system where delete-after-N-days is allowed,
     # owned by a dedicated janitor (M5-3). See AGENTS.md §5.
-    # The env name `QUARANTINE_CONTAINER` (not `BLOB_QUARANTINE_CONTAINER`)
-    # matches the canonical KV / chart key — pydantic-settings is case-
-    # insensitive and accepts both.
+    # Env: BLOB_QUARANTINE_CONTAINER. Keep this explicit — pydantic-settings
+    # maps field names to env vars directly unless a validation alias is set.
     blob_quarantine_container: str = "quarantine"
 
     def use_blob_identity(self) -> bool:

@@ -200,13 +200,18 @@ export default function ReviewQueuePage() {
 }
 
 function canApprove(row: SkillListItem): boolean {
-  return row.defender_status === "clean" || row.defender_status === "flagged";
+  if (row.defender_status === "clean") return true;
+  if (row.defender_status !== "flagged") return false;
+  return row.defender_severity === "low" || row.defender_severity === "clean";
 }
 
 function approveTitle(row: SkillListItem): string {
   if (canApprove(row)) return "Approve skill";
   if (row.defender_status === "failed") {
     return "Defender scan failed; rescan before approval";
+  }
+  if (row.defender_status === "flagged") {
+    return "Defender finding requires override or quarantine before approval";
   }
   return "Defender scan must complete before approval";
 }

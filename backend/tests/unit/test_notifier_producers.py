@@ -212,8 +212,10 @@ async def test_upload_emits_skill_uploaded_event():
     ev = events[0]
     assert ev.event_type == "skill.uploaded"
     assert ev.skill_id == doc.skill_id
+    assert ev.payload["skill_name"] == doc.name
     assert ev.payload["version"] == doc.version
     assert ev.payload["uploader"] == "alice@org"
+    assert ev.payload["uploaded_at"]
     # idempotency_key derived from (event_type, skill_id, version, doc.id)
     assert ev.idempotency_key  # populated
 
@@ -739,6 +741,10 @@ async def test_curator_scheduler_emits_weekly_report(monkeypatch):
     assert ev.event_type == "curator.weekly_report"
     assert ev.skill_id is None
     assert ev.payload["deterministic_error"] == "paused"
+    assert ev.payload["window_start"]
+    assert ev.payload["window_end"]
+    assert ev.payload["pass_count"] == 1
+    assert ev.payload["error_count"] == 1
 
 
 @pytest.mark.asyncio
@@ -802,5 +808,10 @@ async def test_curator_scheduler_weekly_report_includes_transitions(monkeypatch)
     assert ev.event_type == "curator.weekly_report"
     assert ev.payload["transitions_total"] == 2
     assert ev.payload["transitions_applied"] == 1
+    assert ev.payload["transition_count"] == 1
+    assert ev.payload["stale_count"] == 1
+    assert ev.payload["archived_count"] == 0
+    assert ev.payload["snapshot_count"] == 1
+    assert ev.payload["error_count"] == 0
     assert ev.payload["snapshot_name"] == "snap-1"
     assert ev.payload["run_id"] == "20260521T120000Z"

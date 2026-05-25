@@ -6,9 +6,9 @@
 # M5 full-flow E2E suite, then tears the stack back down on success.
 #
 # Usage:   ./scripts/smoke_m5.sh
-# Env:     KEEP_STACK=1     — skip the final `docker compose down`.
-#          NO_DOWN_ON_FAIL=1 (default) — never tear down on failure so the
-#                            operator can inspect emulator logs.
+# Env:     KEEP_STACK=1       — skip the final `docker compose down`.
+#          NO_DOWN_ON_FAIL=1  — leave stack up on failure for inspection.
+#          NO_DOWN_ON_FAIL=0  — tear stack down on failure.
 
 set -euo pipefail
 
@@ -16,14 +16,20 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 KEEP_STACK="${KEEP_STACK:-0}"
+NO_DOWN_ON_FAIL="${NO_DOWN_ON_FAIL:-1}"
 
 log() { printf '\033[1;36m[smoke-m5]\033[0m %s\n' "$*"; }
 ok()  { printf '\033[1;32m[ ok ]\033[0m %s\n' "$*"; }
 err() { printf '\033[1;31m[fail]\033[0m %s\n' "$*" >&2; }
 
 cleanup_failure() {
-  err "smoke failed — leaving stack up for inspection."
-  err "run \`docker compose down\` manually when you're done."
+  if [[ "$KEEP_STACK" == "1" || "$NO_DOWN_ON_FAIL" == "1" ]]; then
+    err "smoke failed — leaving stack up for inspection."
+    err "run \`docker compose down\` manually when you're done."
+    return
+  fi
+  err "smoke failed — tearing stack down (NO_DOWN_ON_FAIL=0)."
+  docker compose down
 }
 
 wait_for_port() {

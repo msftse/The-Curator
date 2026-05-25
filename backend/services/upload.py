@@ -167,8 +167,10 @@ async def handle_upload(
             payload={
                 "skill_id": skill_id,
                 "version": version,
+                "skill_name": name,
                 "name": name,
                 "uploader": uploader,
+                "uploaded_at": doc.uploaded_at.isoformat(),
                 "description": description,
             },
             idempotency_key=make_idempotency_key(
