@@ -107,7 +107,7 @@ async def get_download_url(
     and then sets `window.location` to the SAS. The SAS itself is the
     capability presented to Azure Blob.
 
-    Default TTL is 15 minutes (see `signed_download_url`).
+    Default TTL is 1 minute (see `signed_download_url`).
     """
     doc = await catalog_svc.get_skill(
         skill_id=skill_id,
@@ -139,10 +139,10 @@ async def get_download_url(
             f"could not mint signed URL: {exc.__class__.__name__}: {exc}",
             metadata={"skill_id": skill_id, "version": doc.version},
         ) from exc
-    # `signed_download_url` defaults to TTL=15min; mirror that here. If the
+    # `signed_download_url` defaults to TTL=1min; mirror that here. If the
     # helper signature ever exposes the expiry, prefer threading it through
     # over recomputing.
-    expires_at = datetime.now(UTC) + timedelta(minutes=15)
+    expires_at = datetime.now(UTC) + timedelta(minutes=1)
     return DownloadUrlResponse(url=url, expires_at=expires_at)
 
 

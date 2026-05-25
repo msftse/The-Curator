@@ -176,11 +176,14 @@ export const api = {
     queue(): Promise<SkillListItem[]> {
       return call<SkillListItem[]>("/v1/admin/queue");
     },
-    approve(skillId: string): Promise<SkillListItem> {
+    approve(
+      skillId: string,
+      body: { defender_override?: boolean; justification?: string | null } = {},
+    ): Promise<SkillListItem> {
       return call<SkillListItem>(`/v1/admin/skills/${skillId}/approve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: "{}",
+        body: JSON.stringify(body),
       });
     },
     reject(skillId: string, reason: string): Promise<SkillListItem> {
@@ -202,6 +205,13 @@ export const api = {
           body: JSON.stringify(patch),
         },
       );
+    },
+    classifyNow(skillId: string): Promise<SkillListItem> {
+      return call<SkillListItem>(`/v1/admin/skills/${skillId}/classify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
     },
     archive(skillId: string, reason: string): Promise<SkillListItem> {
       // Admin-issued manual archive. Soft delete: bytes go to archive/,
@@ -242,6 +252,13 @@ export const api = {
           body: JSON.stringify({ justification }),
         },
       );
+    },
+    defenderRescan(skillId: string): Promise<SkillListItem> {
+      return call<SkillListItem>(`/v1/admin/skills/${skillId}/defender-rescan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
     },
   },
   catalog: {

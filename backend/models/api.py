@@ -40,21 +40,16 @@ class SkillListItem(BaseModel):
     # diverge.
     user_category: str | None = None
     user_tags: list[str] = Field(default_factory=list)
+    defender_status: str = "pending"
+    defender_severity: str | None = None
+    defender_report: dict[str, Any] | None = None
+    defender_scanned_at: datetime | None = None
 
 
 class SkillDetail(SkillListItem):
     """Single-skill response. Adds rendered SKILL.md body for the catalog detail page."""
 
     skill_md_text: str = ""
-
-    # ---- Defender (M5-4 surface) ----
-    # The admin skill-detail page shows the structured DefenderReport so
-    # the operator can decide between override + quarantine. These mirror
-    # `SkillDoc.defender_*` directly; never include the raw bundle bytes.
-    defender_status: str = "pending"
-    defender_severity: str | None = None
-    defender_report: dict[str, Any] | None = None
-    defender_scanned_at: datetime | None = None
 
     # ---- Quarantine (mirror of SkillDoc fields; M5-3) ----
     # Surfaced so the catalog detail page can show "why was this killed?"
@@ -92,8 +87,11 @@ class ArchiveRequest(BaseModel):
 
 
 class ApproveRequest(BaseModel):
-    # M0 has no fields, but reserved for M1 (e.g. force_republish).
-    pass
+    # M5 defender gate: medium/high/critical findings cannot be approved
+    # silently. Admins can either call the explicit defender-override endpoint
+    # first, or pass this inline override on approve.
+    defender_override: bool = False
+    justification: str | None = Field(default=None, max_length=2000)
 
 
 class QuarantineRequest(BaseModel):

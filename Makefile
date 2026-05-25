@@ -3,7 +3,7 @@ PY := python
 UVICORN := uvicorn
 PNPM := pnpm
 
-.PHONY: help up down api worker curator web dev seed wait test test-unit test-integration lint format typecheck demo curator-run curator-dry-run curator-status janitor
+.PHONY: help up down api worker defender-worker notifier-worker curator web dev seed wait test test-unit test-integration lint format typecheck demo curator-run curator-dry-run curator-status janitor
 
 help:
 	@echo "Common targets:"
@@ -12,6 +12,8 @@ help:
 	@echo "  make wait               # block until emulators are reachable"
 	@echo "  make api                # run FastAPI dev server (foreground)"
 	@echo "  make worker             # run classifier worker (foreground)"
+	@echo "  make defender-worker    # run defender worker (foreground)"
+	@echo "  make notifier-worker    # run notifier worker (foreground)"
 	@echo "  make dev                # api + worker together, single Ctrl-C kills both"
 	@echo "  make web                # run Next.js dev server"
 	@echo "  make seed               # seed sample skills"
@@ -47,6 +49,12 @@ api:
 
 worker:
 	$(PY) -m backend.workers.classifier
+
+defender-worker:
+	$(PY) -m backend.workers.defender
+
+notifier-worker:
+	$(PY) -m backend.workers.notifier
 
 # Run api + classifier worker together. The worker is a separate process
 # (uvicorn --reload doesn't restart it), so without this target it's easy

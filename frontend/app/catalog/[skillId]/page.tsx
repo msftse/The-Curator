@@ -85,6 +85,7 @@ export default function CatalogSkillDetailPage({
             <SkillDetailDefenderActions skill={data} />
             <DefenderReportPanel
               status={data.defender_status}
+              skillStatus={data.status}
               severity={data.defender_severity}
               report={data.defender_report}
               scannedAt={data.defender_scanned_at}

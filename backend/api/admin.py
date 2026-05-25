@@ -27,8 +27,10 @@ from backend.models.api import (
 )
 from backend.services import catalog as catalog_svc
 from backend.services import classification as classification_svc
+from backend.services import classifier_requeue as classifier_requeue_svc
 from backend.services import curator as curator_svc
 from backend.services import defender_override as defender_override_svc
+from backend.services import defender_requeue as defender_requeue_svc
 from backend.services import publish as publish_svc
 from backend.services import quarantine as quarantine_svc
 
@@ -48,7 +50,7 @@ async def review_queue(
 @router.post("/skills/{skill_id}/approve", response_model=SkillListItem)
 async def approve_skill(
     skill_id: str,
-    _body: ApproveRequest | None = None,
+    body: ApproveRequest | None = None,
     user: User = Depends(_require_admin),
     settings: Settings = Depends(settings_dep),
     skills: ContainerProxy = Depends(get_skills_container),
@@ -65,6 +67,8 @@ async def approve_skill(
         audit=audit,
         blob=blob,
         redis=redis,
+        defender_override=body.defender_override if body else False,
+        defender_justification=body.justification if body else None,
     )
     return _to_item(doc)
 
@@ -105,6 +109,25 @@ async def patch_classification(
         actor_oid=user.oid,
         skills=skills,
         audit=audit,
+    )
+    return _to_item(doc)
+
+
+@router.post("/skills/{skill_id}/classify", response_model=SkillListItem)
+async def classify_now(
+    skill_id: str,
+    user: User = Depends(_require_admin),
+    skills: ContainerProxy = Depends(get_skills_container),
+    audit: ContainerProxy = Depends(get_audit_container),
+    redis: Redis = Depends(get_redis_client),
+) -> SkillListItem:
+    doc = await classifier_requeue_svc.requeue_classifier(
+        skill_id=skill_id,
+        actor=user.email,
+        actor_oid=user.oid,
+        skills=skills,
+        audit=audit,
+        redis=redis,
     )
     return _to_item(doc)
 
@@ -239,6 +262,25 @@ async def defender_override(
     return _to_item(doc)
 
 
+@router.post("/skills/{skill_id}/defender-rescan", response_model=SkillListItem)
+async def defender_rescan(
+    skill_id: str,
+    user: User = Depends(_require_admin),
+    skills: ContainerProxy = Depends(get_skills_container),
+    audit: ContainerProxy = Depends(get_audit_container),
+    redis: Redis = Depends(get_redis_client),
+) -> SkillListItem:
+    doc = await defender_requeue_svc.requeue_defender(
+        skill_id=skill_id,
+        actor=user.email,
+        actor_oid=user.oid,
+        skills=skills,
+        audit=audit,
+        redis=redis,
+    )
+    return _to_item(doc)
+
+
 def _to_item(doc) -> SkillListItem:
     return SkillListItem(
         skill_id=doc.skill_id,
@@ -255,4 +297,8 @@ def _to_item(doc) -> SkillListItem:
         pinned=doc.pinned,
         user_category=doc.user_category,
         user_tags=list(doc.user_tags),
+        defender_status=doc.defender_status,
+        defender_severity=doc.defender_severity,
+        defender_report=doc.defender_report,
+        defender_scanned_at=doc.defender_scanned_at,
     )

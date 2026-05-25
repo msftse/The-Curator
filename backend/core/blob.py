@@ -123,7 +123,7 @@ async def signed_download_url(
     *,
     skill_id: str,
     version: str,
-    ttl_minutes: int = 15,
+    ttl_minutes: int = 1,
 ) -> str:
     """Generate a short-lived SAS download URL for a published bundle.
 

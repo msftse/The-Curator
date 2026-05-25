@@ -21,7 +21,7 @@ from backend.models.defender import (
     DefenderReport,
     DefenderSeverity,
 )
-from backend.models.skill import SkillDoc
+from backend.models.skill import Bundle, SkillDoc
 from backend.services.defender.scanner import FakeDefenderScanner
 from backend.workers.defender import process_one
 
@@ -76,6 +76,38 @@ class _FakeRedis:
     async def delete(self, *keys: str) -> int:
         self.deleted.extend(keys)
         return len(keys)
+
+
+class _FakeDownloader:
+    def __init__(self, data: bytes) -> None:
+        self._data = data
+
+    async def readall(self) -> bytes:
+        return self._data
+
+
+class _FakeBlobClient:
+    def __init__(self, data: bytes) -> None:
+        self._data = data
+
+    async def download_blob(self) -> _FakeDownloader:
+        return _FakeDownloader(self._data)
+
+
+class _FakeBlobContainer:
+    def __init__(self, data: bytes) -> None:
+        self._data = data
+
+    def get_blob_client(self, path: str) -> _FakeBlobClient:  # noqa: ARG002
+        return _FakeBlobClient(self._data)
+
+
+class _FakeBlobService:
+    def __init__(self, data: bytes) -> None:
+        self._data = data
+
+    def get_container_client(self, name: str) -> _FakeBlobContainer:  # noqa: ARG002
+        return _FakeBlobContainer(self._data)
 
 
 # ---- helpers ---------------------------------------------------------
@@ -313,3 +345,28 @@ async def test_process_one_too_large_records_skill_too_large(monkeypatch):
     findings = stored.defender_report["findings"]
     assert len(findings) == 1
     assert findings[0]["rule"] == "skill.too_large"
+
+
+async def test_process_one_approved_reads_bundle_from_blob(monkeypatch):
+    _patch_get_container(monkeypatch)
+    doc = _make_doc("approved-skill")
+    doc.status = "approved"
+    doc.pending_bundle_b64 = None
+    doc.bundle = Bundle(blob_url="https://fake", checksum_sha256="x", size_bytes=1, file_count=1)
+    skills = _FakeContainer()
+    audit = _FakeContainer()
+    skills.items[doc.id] = doc.model_dump(mode="json")
+    cosmos = _FakeCosmosClient(skills, audit)
+    redis = _FakeRedis()
+    scanner = FakeDefenderScanner()
+
+    await process_one(
+        doc_id=doc.id,
+        cosmos_client=cosmos,
+        redis=redis,
+        settings=_settings(),
+        scanner=scanner,
+        blob=_FakeBlobService(b"published-bundle-bytes"),
+    )
+
+    assert scanner.calls == [len(b"published-bundle-bytes")]

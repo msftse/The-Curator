@@ -46,7 +46,7 @@ export function DownloadButton({
         onClick={() => setOpen(true)}
         className="ms-btn-primary"
       >
-        Use this skill
+        Get skill
       </button>
       <DownloadDialog
         open={open}

@@ -75,17 +75,14 @@ export interface SkillListItem {
   /** Contributor-supplied tags from the upload form. Merged with
    *  `classification.tags` (user order first, dedup case-insensitive, cap 8). */
   user_tags: string[];
-}
-
-export interface SkillDetail extends SkillListItem {
-  skill_md_text: string | null;
-  // M5-4 defender + quarantine surface. The admin detail page renders
-  // `defender_report` directly; non-admin readers see the badge but no
-  // override controls.
   defender_status?: DefenderStatus;
   defender_severity?: DefenderSeverity | null;
   defender_report?: DefenderReport | null;
   defender_scanned_at?: string | null;
+}
+
+export interface SkillDetail extends SkillListItem {
+  skill_md_text: string | null;
   quarantined_at?: string | null;
   quarantined_by?: string | null;
   quarantine_justification?: string | null;

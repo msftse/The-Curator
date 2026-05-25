@@ -34,6 +34,7 @@ from datetime import UTC, datetime
 
 from azure.cosmos.aio import CosmosClient
 
+from backend.core.blob import published_blob_path
 from backend.core.config import get_settings
 from backend.core.cosmos import (
     AUDIT_CONTAINER,
@@ -82,6 +83,18 @@ def _decode_bundle(doc: SkillDoc) -> bytes:
     return base64.b64decode(doc.pending_bundle_b64)
 
 
+async def _load_bundle_bytes(doc: SkillDoc, *, blob, settings) -> bytes:
+    if doc.pending_bundle_b64:
+        return _decode_bundle(doc)
+    if doc.status == "approved" and doc.bundle is not None and blob is not None:
+        src = blob.get_container_client(settings.blob_published_container).get_blob_client(
+            published_blob_path(doc.skill_id, doc.version)
+        )
+        downloader = await src.download_blob()
+        return await downloader.readall()
+    return b""
+
+
 def _too_large_report(scanner_name: str, exc: DefenderTooLarge) -> DefenderReport:
     return DefenderReport(
         overall_severity=DefenderSeverity.HIGH,
@@ -113,6 +126,7 @@ async def process_one(
     redis,
     settings,
     scanner=None,
+    blob=None,
 ) -> None:
     """One BLPOP tick. Exposed for tests so they can drive a single message
     without spinning the long-running loop."""
@@ -159,7 +173,7 @@ async def process_one(
     final_status: str
     failed_reason: str | None = None
     try:
-        bundle_bytes = _decode_bundle(doc)
+        bundle_bytes = await _load_bundle_bytes(doc, blob=blob, settings=settings)
         report = await scanner.scan(bundle_bytes=bundle_bytes)
         final_status = "clean" if report.overall_severity == DefenderSeverity.CLEAN else "flagged"
     except DefenderTooLarge as exc:
@@ -301,6 +315,9 @@ async def run_loop(stop: asyncio.Event | None = None) -> None:
 
     cosmos_client = get_cosmos_client(settings)
     redis = get_redis(settings)
+    from backend.core.blob import get_blob_service
+
+    blob = get_blob_service(settings)
     await ensure_containers(cosmos_client, settings.cosmos_db_name)
 
     stop = stop or asyncio.Event()
@@ -327,10 +344,13 @@ async def run_loop(stop: asyncio.Event | None = None) -> None:
                 redis=redis,
                 settings=settings,
                 scanner=scanner,
+                blob=blob,
             )
     finally:
         with contextlib.suppress(Exception):
             await redis.aclose()
+        with contextlib.suppress(Exception):
+            await blob.close()
         with contextlib.suppress(Exception):
             await cosmos_client.close()
         log.info("defender_worker_stopped")

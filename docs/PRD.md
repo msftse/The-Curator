@@ -91,11 +91,11 @@ The platform routes every submission through an automated classifier agent (auto
 - As a manager, I want to open a review queue sorted by submission time or classifier quality score, so I can triage efficiently.
 - As a manager, I want to view the rendered SKILL.md and bundle file tree inline, so I don't have to download anything to review.
 - As a manager, I want to override the classifier's category/tags before approving, so the catalog stays clean.
-- As a manager, I want to approve in one click or reject with a required reason, so contributors get actionable feedback.
+- As a manager, I want to see Defender status and findings in the review queue, approve only after a clean scan, override flagged findings with a required justification, or quarantine malicious submissions, so unsafe bundles cannot be published accidentally.
 
 **Consumer (agent runtime)**
 - As an agent runtime, I want to `GET /v1/skills?category=devops`, so I can discover approved skills filtered to my needs.
-- As an agent runtime, I want to download a skill bundle as a tar.gz via a signed URL, so I avoid hitting the app tier for bytes.
+- As an agent runtime, I want to download a skill bundle as a tar.gz via a short-lived signed URL embedded in a copyable prompt, so I avoid hitting the app tier for bytes and the link expires quickly.
 - As an agent runtime, I want to `POST /v1/skills/{id}/usage` when I load a skill, so the curator has real data to work with.
 
 **Admin**
@@ -237,7 +237,9 @@ agentic-skill-hub/
 ### 7.3 Review Queue
 - Paginated list of pending skills, sortable by submission time or classifier quality score
 - Per-skill detail: rendered markdown, file tree, editable classifier output, uploader info
-- Actions: approve, reject (reason required), edit classification
+- Per-skill Defender panel: status, severity, model, timestamp, and structured findings are visible inline to admins
+- Actions: approve, reject (reason required), edit classification, requeue classification (`Classify now`), rescan Defender (`Rescan defender` from skill detail)
+- Approval is blocked while Defender is `pending`, `scanning`, or `failed`; flagged medium/high/critical findings require an audit-logged override justification or quarantine
 - Bulk approve gated behind per-skill checkboxes (no "approve all" footgun)
 
 ### 7.4 Publish
@@ -250,7 +252,7 @@ agentic-skill-hub/
 - `GET /v1/skills` — list approved skills (filter by category, tag, status)
 - `GET /v1/skills/{id}` — metadata for one skill
 - `GET /v1/skills/{id}/versions` — version history
-- `GET /v1/skills/{id}/download` — signed URL to bundle tar.gz
+- `GET /v1/skills/{id}/download` — one-minute signed URL to bundle tar.gz
 - `POST /v1/skills/{id}/usage` — agent reports load/use event (auth required)
 - All endpoints return JSON, paginate cursor-style, include rate-limit headers
 
@@ -352,7 +354,8 @@ All endpoints return JSON, paginate cursor-style, and include rate-limit headers
 | `GET`  | `/v1/skills` | List approved skills. Query: `category`, `tag`, `status`, `cursor`, `limit` |
 | `GET`  | `/v1/skills/{id}` | Metadata for one skill (latest approved version) |
 | `GET`  | `/v1/skills/{id}/versions` | Version history |
-| `GET`  | `/v1/skills/{id}/download` | Returns signed URL to bundle tar.gz |
+| `GET`  | `/v1/skills/{id}/download` | Returns a one-minute signed URL to bundle tar.gz |
+| `GET`  | `/v1/skills/{id}/download_url` | SPA helper: returns the one-minute signed URL and expiry so the Get Skill prompt can include it |
 | `POST` | `/v1/skills/{id}/usage` | Agent reports load/use event |
 
 ### Contributor / Manager (auth: OIDC)
@@ -365,6 +368,10 @@ All endpoints return JSON, paginate cursor-style, and include rate-limit headers
 | `POST` | `/v1/admin/skills/{id}/approve` | Manager: approve (triggers publish) |
 | `POST` | `/v1/admin/skills/{id}/reject` | Manager: reject (reason required) |
 | `PATCH`| `/v1/admin/skills/{id}/classification` | Manager: override classifier output |
+| `POST` | `/v1/admin/skills/{id}/classify` | Admin: requeue classifier for stuck or legacy unclassified skills, including approved backfill |
+| `POST` | `/v1/admin/skills/{id}/defender-rescan` | Admin: clear old Defender result and requeue a scan |
+| `POST` | `/v1/admin/skills/{id}/defender-override` | Admin: override a flagged Defender finding with justification |
+| `POST` | `/v1/admin/skills/{id}/quarantine` | Admin: move a flagged malicious skill to quarantine |
 
 ### Admin (auth: OIDC, admin role)
 
@@ -582,7 +589,9 @@ lifecycle flows actually reach humans. Full plan:
   guarded `delete_blob` allowlist in the AST gate; deletes bundles
   past `quarantine_expires_at`, never the Cosmos doc.
 - ✅ Defender admin UI — report rendering, override-with-justification,
-  quarantine button surfaced in the review queue.
+  quarantine button surfaced in the review queue. Approval is blocked until
+  Defender completes; admins can rescan Defender from skill detail pages and
+  can see Defender reports inline in the review queue.
 - ✅ Notifier worker (`backend/workers/notifier.py`) — fan-out via ACS
   email + Microsoft Graph admin-group lookup, with Redis dedupe locks
   (`notif:sent:{idempotency_key}`) and Jinja-style templates per

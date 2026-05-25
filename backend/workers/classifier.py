@@ -132,10 +132,14 @@ async def process_one(
         # above is the source of truth; if this RPUSH fails the janitor
         # sweep will re-queue based on `defender_status=pending` age
         # (AGENTS.md §4 rule 4 mitigation, same shape as the upload path).
-        try:
-            await redis.rpush(key_queue_defender(), doc.id)
-        except Exception as exc:  # pragma: no cover — defensive
-            log.warning("defender_enqueue_failed", extra={"err": str(exc)})
+        if doc.status in {"pending", "classified"} and doc.defender_status in {
+            "pending",
+            "failed",
+        }:
+            try:
+                await redis.rpush(key_queue_defender(), doc.id)
+            except Exception as exc:  # pragma: no cover — defensive
+                log.warning("defender_enqueue_failed", extra={"err": str(exc)})
     except Exception as exc:
         log.exception("classify_failed")
         doc.classifier_status = "failed"

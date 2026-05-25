@@ -1,9 +1,10 @@
 """Janitor sweep — re-queue lost classifier messages.
 
 Implements the AGENTS.md §4 rule #4 mitigation: scans the `skills` container
-for `classifier_status='queued'` docs older than a stale-threshold and
+for stale `classifier_status in ('queued', 'running', 'failed')` docs and
 RPUSHes their `id` back onto `queue:classifier` so the classifier worker
-picks them up.
+picks them up. This self-heals uploads whose original queue message was lost
+or whose classifier worker crashed mid-attempt.
 
 Audit action is `classify` with `metadata.requeued_by='janitor'` — keeps
 the existing audit query surface unchanged.
@@ -41,7 +42,10 @@ async def janitor_classifier_queue(
         )
     )
 
-    query = "SELECT * FROM c WHERE c.classifier_status='queued' AND c.uploaded_at < @cutoff"
+    query = (
+        "SELECT * FROM c WHERE c.classifier_status IN ('queued', 'running', 'failed') "
+        "AND c.status IN ('pending', 'classified', 'approved') AND c.uploaded_at < @cutoff"
+    )
     params = [{"name": "@cutoff", "value": cutoff.isoformat()}]
 
     scanned = 0
@@ -66,7 +70,12 @@ async def janitor_classifier_queue(
                 skill_id=skill_id,
                 action="classify",
                 actor="system:janitor",
-                metadata={"requeued_by": "janitor", "doc_id": doc_id},
+                metadata={
+                    "requeued_by": "janitor",
+                    "doc_id": doc_id,
+                    "classifier_status": raw.get("classifier_status"),
+                    "status": raw.get("status"),
+                },
             )
         requeued += 1
 

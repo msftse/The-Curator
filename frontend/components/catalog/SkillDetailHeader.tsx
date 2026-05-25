@@ -7,6 +7,8 @@ import type { SkillDetail } from "@/lib/api/types";
 
 import { DownloadButton } from "./DownloadButton";
 import { SkillDetailAdminActions } from "./SkillDetailAdminActions";
+import { SkillDetailClassifierActions } from "./SkillDetailClassifierActions";
+import { SkillDetailDefenderRescan } from "./SkillDetailDefenderRescan";
 
 export function SkillDetailHeader({ skill }: { skill: SkillDetail }) {
   const hasBundle = skill.bundle !== null && skill.status === "approved";
@@ -92,6 +94,8 @@ export function SkillDetailHeader({ skill }: { skill: SkillDetail }) {
               Bundle not yet packaged
             </span>
           )}
+          <SkillDetailClassifierActions skill={skill} />
+          <SkillDetailDefenderRescan skill={skill} />
           <SkillDetailAdminActions skill={skill} />
         </div>
       </div>

@@ -108,6 +108,10 @@ def _to_item(doc: SkillDoc) -> SkillListItem:
         pinned=doc.pinned,
         user_category=doc.user_category,
         user_tags=list(doc.user_tags),
+        defender_status=doc.defender_status,
+        defender_severity=doc.defender_severity,
+        defender_report=doc.defender_report,
+        defender_scanned_at=doc.defender_scanned_at,
     )
 
 

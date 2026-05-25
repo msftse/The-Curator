@@ -54,9 +54,11 @@ function formatTimestamp(iso: string | null | undefined): string {
 
 export interface DefenderReportPanelProps {
   status: DefenderStatus | undefined;
+  skillStatus?: string;
   severity?: DefenderSeverity | string | null;
   report?: DefenderReport | null;
   scannedAt?: string | null;
+  compact?: boolean;
 }
 
 /**
@@ -66,9 +68,11 @@ export interface DefenderReportPanelProps {
  */
 export function DefenderReportPanel({
   status,
+  skillStatus,
   severity,
   report,
   scannedAt,
+  compact = false,
 }: DefenderReportPanelProps) {
   // No defender activity at all — render nothing rather than a stale
   // "pending" placeholder on legacy pre-M5 docs.
@@ -77,16 +81,18 @@ export function DefenderReportPanel({
   if (status === "pending" || status === "scanning") {
     return (
       <aside
-        className="ms-card flex flex-col gap-2 p-5"
+        className={`${compact ? "rounded border border-line bg-bg p-3" : "ms-card p-5"} flex flex-col gap-2`}
         data-testid="defender-panel"
         data-status={status}
       >
         <h2 className="font-display text-[11px] font-bold uppercase tracking-[0.18em] text-ink-2">
           Defender
         </h2>
-        <p className="text-sm text-muted">
-          Security scan {status === "pending" ? "queued" : "in progress"}. The
-          skill cannot be approved until the scan completes.
+        <p className={`${compact ? "text-xs" : "text-sm"} text-muted`}>
+          Security scan {status === "pending" ? "queued" : "in progress"}.{" "}
+          {skillStatus === "approved"
+            ? "This skill is already published; the scan status is shown for audit visibility."
+            : "The skill cannot be approved until the scan completes."}
         </p>
       </aside>
     );
@@ -95,14 +101,14 @@ export function DefenderReportPanel({
   if (status === "failed") {
     return (
       <aside
-        className="ms-card flex flex-col gap-2 border-l-4 border-ms-red p-5"
+        className={`${compact ? "rounded border border-ms-red/30 bg-bg p-3" : "ms-card p-5"} flex flex-col gap-2 border-l-4 border-ms-red`}
         data-testid="defender-panel"
         data-status={status}
       >
         <h2 className="font-display text-[11px] font-bold uppercase tracking-[0.18em] text-ms-red">
           Defender — scan failed
         </h2>
-        <p className="text-sm text-muted">
+        <p className={`${compact ? "text-xs" : "text-sm"} text-muted`}>
           The defender worker could not complete the scan. The janitor will
           re-queue this skill automatically; no action required.
         </p>
@@ -120,7 +126,7 @@ export function DefenderReportPanel({
 
   return (
     <aside
-      className={`ms-card flex flex-col gap-4 p-5 ${
+      className={`${compact ? "rounded border border-line bg-bg p-3" : "ms-card p-5"} flex flex-col gap-4 ${
         flagged ? "border-l-4 border-ms-red" : ""
       }`}
       data-testid="defender-panel"
