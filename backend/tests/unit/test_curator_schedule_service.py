@@ -31,7 +31,6 @@ from backend.models.schedule import (
 )
 from backend.services import curator_schedule as schedule_svc
 
-
 # ---- in-memory fakes -------------------------------------------------
 
 
@@ -41,9 +40,7 @@ class _FakeSystemState:
 
     async def read_item(self, *, item: str, partition_key: str) -> dict[str, Any]:  # noqa: ARG002
         if item not in self.items:
-            raise cosmos_exc.CosmosResourceNotFoundError(
-                status_code=404, message="not found"
-            )
+            raise cosmos_exc.CosmosResourceNotFoundError(status_code=404, message="not found")
         return self.items[item]
 
     async def upsert_item(self, *, body: dict[str, Any]) -> dict[str, Any]:
@@ -90,6 +87,8 @@ def test_validate_cron_accepts_valid(expr: str) -> None:
         "0 3 32 * *",  # dom out of range
         "0 3 * 13 *",  # month out of range
         "0 3 * * 7",  # dow out of range
+        "*/0 * * * *",  # zero step
+        "0 */99 * * *",  # step larger than field range
         "MON 3 * * *",  # named token
         "0 3 5-2 * *",  # inverted range
     ],

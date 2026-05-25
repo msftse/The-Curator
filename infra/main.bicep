@@ -146,9 +146,7 @@ module kv 'modules/keyvault.bicep' = if (deployAll) {
   }
 }
 
-// M5 — Azure Communication Services (notifier worker). Skeleton only:
-// resource is provisioned, connection string flows to KV, but no worker
-// code consumes it yet (M5-2 lands the worker).
+// M5 — Azure Communication Services (notifier worker).
 module acs 'modules/communication.bicep' = if (deployAll) {
   name: 'acs'
   params: {
@@ -157,13 +155,17 @@ module acs 'modules/communication.bicep' = if (deployAll) {
   }
 }
 
+resource acsResource 'Microsoft.Communication/communicationServices@2023-04-01' existing = if (deployAll) {
+  name: acs!.outputs.acsName
+}
+
 // M5 — write ACS connection string into Key Vault, overwriting the seed
 // placeholder set by keyvault.bicep. Notifier pod (M5-5) mounts this via
 // the CSI driver.
 resource acsConnSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (deployAll) {
   name: '${kv!.outputs.vaultName}/acs-connection-string'
   properties: {
-    value: acs!.outputs.connectionString
+    value: acsResource.listKeys().primaryConnectionString
     contentType: 'text/plain'
   }
   dependsOn: [
@@ -219,7 +221,6 @@ module rbac 'modules/rbac.bicep' = if (deployAll) {
     curatorPrincipalId: identity!.outputs.curatorPrincipalId
     defenderPrincipalId: identity!.outputs.defenderPrincipalId
     notifierPrincipalId: identity!.outputs.notifierPrincipalId
-    acsResourceId: acs!.outputs.acsResourceId
     assignCosmosDataPlane: env == 'prod'
   }
 }

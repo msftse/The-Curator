@@ -745,6 +745,7 @@ async def test_curator_scheduler_emits_weekly_report(monkeypatch):
     assert ev.payload["window_end"]
     assert ev.payload["pass_count"] == 1
     assert ev.payload["error_count"] == 1
+    assert ev.idempotency_key
 
 
 @pytest.mark.asyncio

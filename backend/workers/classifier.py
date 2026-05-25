@@ -94,7 +94,7 @@ async def process_one(
 
     doc = SkillDoc.model_validate(raw)
     # M5-3: a quarantined skill must never re-enter classifier flow even
-    # if a stale queue message resurrects it. Bail before touching Cosmos.
+    # if a stale queue message resurrects it. Bail before mutating Cosmos.
     if doc.status == "quarantined":
         log.info(
             "classifier_skipped_quarantined",

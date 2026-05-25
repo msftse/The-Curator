@@ -18,6 +18,7 @@ fail-loud rendering, render explicitly with `str.format(**payload)`.
 
 from __future__ import annotations
 
+import html as html_lib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -62,6 +63,13 @@ class _SafeDict(dict):
         return ""
 
 
+class _SafeHtmlDict(_SafeDict):
+    """HTML renderer mapping that escapes all user-controlled values."""
+
+    def __getitem__(self, key: str) -> str:
+        return html_lib.escape(str(super().__getitem__(key)), quote=True)
+
+
 @dataclass(frozen=True)
 class RenderedEmail:
     subject: str
@@ -83,7 +91,8 @@ def render_template(event_type: str, payload: dict[str, Any]) -> RenderedEmail:
         raise KeyError(f"unsupported event type: {event_type!r}")
 
     safe = _SafeDict(payload)
+    safe_html = _SafeHtmlDict(payload)
     subject = SUBJECTS[event_type].format_map(safe)
     text = _read(f"{event_type}.txt").format_map(safe)
-    html = _read(f"{event_type}.html").format_map(safe)
+    html = _read(f"{event_type}.html").format_map(safe_html)
     return RenderedEmail(subject=subject, plain_text=text, html=html)

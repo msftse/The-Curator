@@ -27,7 +27,13 @@ function checkField(raw: string, [lo, hi]: [number, number]): void {
     throw new Error(`cron field '${raw}' invalid`);
   }
   for (const piece of raw.split(",")) {
-    const valuePart = piece.split("/")[0];
+    const [valuePart, stepPart] = piece.split("/");
+    if (stepPart !== undefined) {
+      const step = Number(stepPart);
+      if (!Number.isInteger(step) || step < 1 || step > hi) {
+        throw new Error(`cron field ${raw} step out of range [1,${hi}]`);
+      }
+    }
     if (valuePart === "*") continue;
     if (valuePart.includes("-")) {
       const [aStr, bStr] = valuePart.split("-");
@@ -64,6 +70,9 @@ function expand(field: string, lo: number, hi: number): Set<number> {
   for (const piece of field.split(",")) {
     const [range, stepStr] = piece.split("/");
     const step = stepStr ? Number(stepStr) : 1;
+    if (!Number.isInteger(step) || step < 1) {
+      throw new Error(`cron field '${field}' has invalid step`);
+    }
     let a: number, b: number;
     if (range === "*") {
       a = lo;

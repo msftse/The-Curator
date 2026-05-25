@@ -190,11 +190,11 @@ async def _run_one_pass(
 
     digest_payload["window_end"] = datetime.now(UTC).isoformat()
 
-    # M5-6: fire the weekly digest event at the end of every pass.
-    # The notifier de-dupes on idempotency_key; we key on the run_id (or
-    # a per-pass timestamp fallback) so concurrent / replayed scheduler
-    # ticks collapse to a single email.
-    run_id = digest_payload["run_id"] or f"adhoc-{actor}"
+    # M5-6: fire a per-pass curator report event. The historical event name is
+    # `curator.weekly_report` because the default schedule is weekly, but the
+    # payload window is the actual pass duration so ad-hoc or more frequent
+    # schedules do not pretend to be weekly rollups.
+    run_id = digest_payload["run_id"] or f"adhoc-{actor}-{pass_started.isoformat()}"
     await enqueue_notification(
         build_event(
             "curator.weekly_report",
