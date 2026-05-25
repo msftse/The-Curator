@@ -176,11 +176,14 @@ export const api = {
     queue(): Promise<SkillListItem[]> {
       return call<SkillListItem[]>("/v1/admin/queue");
     },
-    approve(skillId: string): Promise<SkillListItem> {
+    approve(
+      skillId: string,
+      body: { defender_override?: boolean; justification?: string | null } = {},
+    ): Promise<SkillListItem> {
       return call<SkillListItem>(`/v1/admin/skills/${skillId}/approve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: "{}",
+        body: JSON.stringify(body),
       });
     },
     reject(skillId: string, reason: string): Promise<SkillListItem> {
@@ -203,6 +206,13 @@ export const api = {
         },
       );
     },
+    classifyNow(skillId: string): Promise<SkillListItem> {
+      return call<SkillListItem>(`/v1/admin/skills/${skillId}/classify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+    },
     archive(skillId: string, reason: string): Promise<SkillListItem> {
       // Admin-issued manual archive. Soft delete: bytes go to archive/,
       // status flips to "archived", restorable via curator.restore().
@@ -212,6 +222,42 @@ export const api = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reason }),
+      });
+    },
+    quarantine(skillId: string, justification: string): Promise<SkillListItem> {
+      // M5-3 — admin moves a defender-flagged skill into the terminal
+      // `quarantine/` blob container. Backend requires
+      // `defender_status='flagged'` (DEFENDER_NOT_FLAGGED) and a
+      // justification ≥20 chars (JUSTIFICATION_REQUIRED). Pinned skills
+      // are refused (SKILL_PINNED).
+      return call<SkillListItem>(`/v1/admin/skills/${skillId}/quarantine`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ justification }),
+      });
+    },
+    defenderOverride(
+      skillId: string,
+      justification: string,
+    ): Promise<SkillListItem> {
+      // M5-4 — admin overrides a defender finding. Backend flips
+      // defender_status flagged → clean (skill `status` unchanged) and
+      // writes an audit row with the justification. Same precondition
+      // matrix as quarantine.
+      return call<SkillListItem>(
+        `/v1/admin/skills/${skillId}/defender-override`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ justification }),
+        },
+      );
+    },
+    defenderRescan(skillId: string): Promise<SkillListItem> {
+      return call<SkillListItem>(`/v1/admin/skills/${skillId}/defender-rescan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
       });
     },
   },

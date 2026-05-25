@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { CountsByStatus } from "@/components/curator/CountsByStatus";
+import { JanitorPanel } from "@/components/curator/JanitorPanel";
 import { RunControls } from "@/components/curator/RunControls";
 import { RunRecordCard } from "@/components/curator/RunRecordCard";
 import { StatusCards } from "@/components/curator/StatusCards";
@@ -48,6 +49,13 @@ export default function CuratorDashboardPage() {
 
       <section>
         <CountsByStatus />
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-sm font-semibold uppercase text-gray-600">
+          Maintenance
+        </h2>
+        <JanitorPanel onMutated={() => status.mutate()} />
       </section>
 
       {lastDryRun ? (

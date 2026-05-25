@@ -28,6 +28,13 @@ global:
     backendClientId: ""
     classifierClientId: ""
     curatorClientId: ""
+    # M5-2 defender worker — its own UAMI so it can be granted exactly the
+    # Cosmos + Redis + Blob roles it needs (no Foundry-specific scope).
+    defenderClientId: ""
+    # M5-5 notifier worker — its own UAMI so the Communication Services
+    # Sender + Microsoft Graph `GroupMember.Read.All` grants are isolated
+    # from the rest of the system.
+    notifierClientId: ""
     # Federated separately so the backend pod can authenticate to the K8s
     # API as a distinct identity (only used for audit — actual K8s RBAC is
     # bound to the backend ServiceAccount, not this UAMI).
@@ -40,6 +47,8 @@ global:
     backend: ""
     classifier: ""
     curator: ""
+    defender: ""
+    notifier: ""
 
   # ACR login server, e.g. skillhubdeveastusacr.azurecr.io. Used as the
   # image registry for all four images.
@@ -55,6 +64,8 @@ image:
     backend: skillhub-backend
     classifier: skillhub-classifier
     curator: skillhub-curator
+    defender: skillhub-defender
+    notifier: skillhub-notifier
 
 # ---------------------------------------------------------------------------
 # Frontend
@@ -168,6 +179,88 @@ classifier:
     # `redis-data-owner` (or equivalent) on the cache for this to work.
 
 # ---------------------------------------------------------------------------
+# Defender (M5-2) — LLM-only skill security scanner.
+# Shape mirrors `classifier:` exactly so the KEDA / NetworkPolicy / SPC
+# wiring is uniform. The defender consumes `queue:defender` (populated by
+# the classifier worker on success) and writes findings back to Cosmos.
+# ---------------------------------------------------------------------------
+defender:
+  resources:
+    requests:
+      cpu: 200m
+      memory: 384Mi
+    limits:
+      cpu: 1000m
+      memory: 1024Mi
+  env:
+    COSMOS_ENDPOINT: ""
+    COSMOS_KEY: ""
+    COSMOS_DB_NAME: "skillhub"
+    BLOB_ACCOUNT_URL: ""
+    REDIS_USE_ENTRA: "true"
+    REDIS_HOST: ""
+    REDIS_PORT: "6380"
+    REDIS_SSL: "true"
+    REDIS_ENTRA_USERNAME: ""
+    APPINSIGHTS_CONNECTION_STRING: ""
+    OTEL_SERVICE_ROLE: "defender"
+    DEFENDER_PROVIDER: "foundry"
+    DEFENDER_MODEL: "gpt-4o"
+    DEFENDER_MAX_TOKENS_INPUT: "32000"
+    FOUNDRY_DEPLOYMENT: ""
+    AZURE_AI_PROJECT_ENDPOINT: ""
+    # AZURE_AI_FOUNDRY_API_KEY is mounted from Key Vault (see keyVault below).
+  # KEDA Redis scaler — drives the Deployment between 0 and maxReplicaCount
+  # based on `LLEN queue:defender`. AGENTS.md §4 rule 4 still applies: the
+  # classifier writes the Cosmos doc before pushing to queue:defender, and
+  # the janitor sweep re-queues docs lost on scale-down.
+  keda:
+    minReplicaCount: 0
+    maxReplicaCount: 10
+    pollingInterval: 10
+    cooldownPeriod: 120
+    queueLength: "5"
+    queueKey: "queue:defender"
+
+# ---------------------------------------------------------------------------
+# Notifier (M5-5) — Azure Communication Services email + Microsoft Graph
+# admin-recipient resolution. Consumes `queue:notifications`, dedupes by
+# `notif:sent:{idempotency_key}`, renders per-event templates.
+# ---------------------------------------------------------------------------
+notifier:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 192Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  env:
+    COSMOS_ENDPOINT: ""
+    COSMOS_KEY: ""
+    COSMOS_DB_NAME: "skillhub"
+    REDIS_USE_ENTRA: "true"
+    REDIS_HOST: ""
+    REDIS_PORT: "6380"
+    REDIS_SSL: "true"
+    REDIS_ENTRA_USERNAME: ""
+    APPINSIGHTS_CONNECTION_STRING: ""
+    OTEL_SERVICE_ROLE: "notifier"
+    NOTIFIER_PROVIDER: "azure"
+    NOTIFIER_GRAPH_PROVIDER: "azure"
+    ACS_SENDER_ADDRESS: "DoNotReply@example.azurecomm.net"
+    ENTRA_GROUP_ID_ADMIN_NOTIFICATIONS: ""
+    NOTIFIER_REVIEW_URL_BASE: ""
+    # ACS_CONNECTION_STRING is mounted from Key Vault (see keyVault below).
+  keda:
+    minReplicaCount: 0
+    maxReplicaCount: 5
+    pollingInterval: 10
+    cooldownPeriod: 120
+    queueLength: "5"
+    queueKey: "queue:notifications"
+
+# ---------------------------------------------------------------------------
 # Curator
 # ---------------------------------------------------------------------------
 curator:
@@ -234,6 +327,10 @@ keyVault:
       - "entra-group-id-admin"
     classifier:
       - "foundry-api-key"      # mounted, then exposed as AZURE_AI_FOUNDRY_API_KEY env var
+    defender:
+      - "foundry-api-key"
+    notifier:
+      - "acs-connection-string"
     curator:
       - "foundry-api-key"
 
@@ -281,6 +378,15 @@ networkPolicy:
         - cidr: "0.0.0.0/0"
           ports: [443, 6380]
     classifier:
+      cidrs:
+        - cidr: "0.0.0.0/0"
+          ports: [443, 6380]
+    defender:
+      cidrs:
+        - cidr: "0.0.0.0/0"
+          ports: [443, 6380]
+    notifier:
+      # Egress to Cosmos (443), Redis (6380), ACS (443), Graph (443).
       cidrs:
         - cidr: "0.0.0.0/0"
           ports: [443, 6380]

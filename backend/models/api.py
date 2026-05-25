@@ -40,12 +40,24 @@ class SkillListItem(BaseModel):
     # diverge.
     user_category: str | None = None
     user_tags: list[str] = Field(default_factory=list)
+    defender_status: str = "pending"
+    defender_severity: str | None = None
+    defender_report: dict[str, Any] | None = None
+    defender_scanned_at: datetime | None = None
 
 
 class SkillDetail(SkillListItem):
     """Single-skill response. Adds rendered SKILL.md body for the catalog detail page."""
 
     skill_md_text: str = ""
+
+    # ---- Quarantine (mirror of SkillDoc fields; M5-3) ----
+    # Surfaced so the catalog detail page can show "why was this killed?"
+    # without a second Cosmos round-trip.
+    quarantined_at: datetime | None = None
+    quarantined_by: str | None = None
+    quarantine_justification: str | None = None
+    quarantine_expires_at: datetime | None = None
 
 
 class DownloadUrlResponse(BaseModel):
@@ -75,8 +87,47 @@ class ArchiveRequest(BaseModel):
 
 
 class ApproveRequest(BaseModel):
-    # M0 has no fields, but reserved for M1 (e.g. force_republish).
-    pass
+    # M5 defender gate: medium/high/critical findings cannot be approved
+    # silently. Admins can either call the explicit defender-override endpoint
+    # first, or pass this inline override on approve.
+    defender_override: bool = False
+    justification: str | None = Field(default=None, max_length=2000)
+
+
+class QuarantineRequest(BaseModel):
+    """Body for admin quarantine (`POST /v1/admin/skills/{id}/quarantine`).
+
+    `justification` is required and must meet the configured minimum
+    length (defaults to 20 chars, mirroring the defender override
+    justification floor). The text is audit-logged verbatim, so admins
+    should write the *why* — not "bad" — for the future operator who
+    reads the trail.
+
+    Length validation against `Settings.quarantine_min_justification_chars`
+    happens at the service layer (this model just enforces non-empty and
+    a generous upper bound).
+    """
+
+    justification: str = Field(min_length=1, max_length=2000)
+
+
+class DefenderOverrideRequest(BaseModel):
+    """Body for admin defender override (M5-4).
+
+    `POST /v1/admin/skills/{id}/defender-override`.
+
+    `justification` is required and must meet the configured minimum
+    length (`Settings.quarantine_min_justification_chars`, default 20 —
+    the same floor used by the quarantine endpoint per plan §3). The
+    text is audit-logged verbatim, so the future operator who reads the
+    trail learns *why* the admin disagreed with the scanner.
+
+    The model enforces non-empty + a generous upper bound; the precise
+    minimum-length check happens at the service layer (since the floor
+    is settings-driven).
+    """
+
+    justification: str = Field(min_length=1, max_length=2000)
 
 
 class ClassificationPatch(BaseModel):

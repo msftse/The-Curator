@@ -173,7 +173,9 @@ Every state transition (`upload`, `classify`, `approve`, `reject`, `publish`, `a
 | `snapshot` | Full tar.gz of `published/` to `snapshots/{utc-iso}/`; rotate retention | `services/snapshot.py` |
 | `curator_rollback` | Byte-for-byte restore from a snapshot | `services/curator_rollback.py:65` |
 | `curator_report` | Markdown report per run | `services/curator_report.py` |
-| `janitor` | Re-queue Cosmos `classifier_status=queued` docs older than threshold | `services/janitor.py:28` |
+| `janitor` | Re-queue stale classifier (`queued`/`running`/`failed`) and Defender (`pending`/`failed`) docs from Cosmos | `services/janitor.py:28` |
+| `classifier_requeue` | Admin-triggered classifier retry/backfill, including approved legacy skills | `services/classifier_requeue.py` |
+| `defender_requeue` | Admin-triggered Defender rescan; clears old report then queues `queue:defender` | `services/defender_requeue.py` |
 | **Curator review (M3)** | | |
 | `curator_review` | Drift + consolidation review pass against Foundry; emits proposals | `services/curator_review.py` |
 | `curator_review_prompts` | Versioned prompt templates (drift + consolidation) | `services/curator_review_prompts.py` |
@@ -206,15 +208,20 @@ Every state transition (`upload`, `classify`, `approve`, `reject`, `publish`, `a
 **Catalog (public, scope-gated)**
 - `GET /v1/skills` — cached 60 s; Cosmos fallback.
 - `GET /v1/skills/{id}` — cached 5 min.
-- `GET /v1/skills/{id}/download` — returns a 15-minute SAS URL (user-delegation in identity mode).
+- `GET /v1/skills/{id}/download` — returns a 1-minute SAS URL (user-delegation in identity mode).
+- `GET /v1/skills/{id}/download_url` — SPA helper returning the 1-minute SAS URL plus expiry for the Get Skill prompt.
 - `GET /v1/skills/{id}/versions`.
 - `POST /v1/skills/{id}/usage` — records a `usage_events` row + bumps counters.
 
 **Admin review**
-- `GET /v1/admin/queue` — `pending`/`classified` skills.
-- `POST /v1/admin/skills/{id}/approve` — locks → publishes → audits.
+- `GET /v1/admin/queue` — `pending`/`classified` skills with classifier and Defender report fields for inline review.
+- `POST /v1/admin/skills/{id}/approve` — locks → enforces Defender gate → publishes → audits. Blocks while Defender is `pending`/`scanning`/`failed`; flagged medium/high/critical findings require `defender_override=true` plus justification or a prior `defender-override` call.
 - `POST /v1/admin/skills/{id}/reject`.
 - `PATCH /v1/admin/skills/{id}/classification`.
+- `POST /v1/admin/skills/{id}/classify` — admin-triggered classifier retry/backfill. Keeps `approved` skills approved while filling missing classification metadata.
+- `POST /v1/admin/skills/{id}/defender-rescan` — admin-triggered Defender rescan. Clears the old report, sets `defender_status=pending`, and pushes to `queue:defender`.
+- `POST /v1/admin/skills/{id}/defender-override` — flips a flagged finding to clean with an audit-logged justification.
+- `POST /v1/admin/skills/{id}/quarantine` — moves a defender-flagged skill to quarantine with mandatory justification.
 - `POST /v1/admin/skills/{id}/archive` — admin-issued manual archive of an
   approved skill (soft delete). Body `{ "reason": "..." }`. Reuses the
   curator's archive primitives: bundle copied to `archive/`, status flips
@@ -331,7 +338,7 @@ Containers (`backend/core/blob.py:61`):
 - `snapshots/{utc-iso-compact}/skills.tar.gz` — pre-pass tar of all `published/` blobs + manifest JSON. Default retention 5 (`CURATOR_SNAPSHOT_RETENTION`).
 - `curator/runs/…` and `curator/reviews/…` — Markdown reports.
 
-Downloads NEVER proxy bytes through the API tier. `signed_download_url` produces a 15-minute SAS:
+Downloads NEVER proxy bytes through the API tier. `signed_download_url` produces a 1-minute SAS:
 
 - **Identity mode** (`BLOB_ACCOUNT_URL` set): user-delegation SAS, signed via AAD; no account key required (`backend/core/blob.py:120`).
 - **Connection-string mode** (Azurite / local dev): account-key SAS.
@@ -405,7 +412,7 @@ Files: `services/upload.py`, `workers/classifier.py`, `services/publish.py`.
 
 ### 11.2 Download (signed)
 
-`GET /v1/skills/{id}/download` → `services/catalog.get_one` (cache-first) → `core/blob.signed_download_url` → 302 to a 15-minute SAS. App tier never sees bytes.
+`GET /v1/skills/{id}/download` → `services/catalog.get_one` (cache-first) → `core/blob.signed_download_url` → 302 to a 1-minute SAS. `GET /download_url` returns the same capability as JSON so the frontend can embed it in the Get Skill prompt. App tier never sees bytes.
 
 ### 11.3 Usage
 
@@ -466,8 +473,17 @@ NEVER calls `delete_item` or `delete_blob` — statically gated.
 ### Classifier (`backend/workers/classifier.py`)
 
 - `BLPOP queue:classifier` with `CLASSIFIER_BLPOP_TIMEOUT_SECONDS` (default 5 s).
-- On each pop: `read_item` doc → run classifier → `replace_item(status=classified, classification=…)` → audit → `DEL cache:skills:item:{id}`.
-- Failures mark `classifier_status=failed`; janitor sweeps stuck `queued` docs by `JANITOR_CLASSIFIER_STALE_MULTIPLIER × BLPOP timeout`.
+- On each pop: `read_item` doc → run classifier → `replace_item(status=classified, classification=…)` → audit → `DEL cache:skills:item:{id}`. Approved backfill docs keep `status=approved` and only receive classification metadata.
+- On successful classification of non-approved submissions, the worker enqueues `queue:defender`. Approved backfills do not re-enter Defender automatically.
+- Failures mark `classifier_status=failed`; janitor sweeps stuck `queued` / `running` / `failed` docs by `JANITOR_CLASSIFIER_STALE_MULTIPLIER × BLPOP timeout`. Admins can trigger the same retry immediately with `POST /v1/admin/skills/{id}/classify`.
+
+### Defender (`backend/workers/defender.py`)
+
+- `BLPOP queue:defender` with `DEFENDER_BLPOP_TIMEOUT_SECONDS` (default 5 s).
+- Reads staged upload bytes for pre-publish scans; for approved rescans it reads `published/{skill_id}/{version}/bundle.tar.gz` from Blob.
+- Writes `defender_status`, `defender_severity`, `defender_report`, and `defender_scanned_at` to Cosmos, then invalidates the item cache and emits notifier events for clean/flagged outcomes.
+- Approval is blocked until Defender is `clean`, or until a flagged finding is explicitly overridden with justification. `pending`, `scanning`, and `failed` cannot publish.
+- Admins can requeue a scan with `POST /v1/admin/skills/{id}/defender-rescan`; the old report is cleared before queueing so the UI shows the fresh pending state.
 
 ### Curator scheduler (`backend/workers/curator_scheduler.py`)
 

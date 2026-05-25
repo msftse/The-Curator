@@ -16,10 +16,9 @@ import { api } from "@/lib/api/client";
  *      "Copy URL".
  *   2. **How to use it.** Three-step recipe directly above the prompt, so
  *      the dialog is self-explanatory the first time someone opens it.
- *   3. **The bundle itself**, as a fallback, via a short-lived signed URL
- *      (~15 min — see backend `signed_download_url`). The endpoint is
- *      auth-gated, so we fetch the SAS via the typed API client and then
- *      navigate the browser to it.
+ *   3. **The bundle itself**, via a 1-minute signed URL. The prompt includes
+ *      the URL so the agent can fetch it directly; the Download button is a
+ *      browser fallback for humans.
  *
  * The SAS is not auto-refreshed. Reopening the dialog mints a new one;
  * the URL is the capability and we want an explicit re-issue gesture.
@@ -99,11 +98,19 @@ export function DownloadDialog({
     };
   }, [open, skillId]);
 
-  // Build the agent-ready prompt. Stable regardless of SAS state — users
-  // can copy it even while the bundle URL is still being minted.
+  // Build the agent-ready prompt from the minted SAS URL. The URL is the
+  // capability the pasted agent needs in order to fetch the bundle directly.
   const prompt = useMemo(
-    () => buildAgentPrompt({ skillName, description, category, tags }),
-    [skillName, description, category, tags],
+    () =>
+      buildAgentPrompt({
+        skillName,
+        description,
+        category,
+        tags,
+        url,
+        expiresAt,
+      }),
+    [skillName, description, category, tags, url, expiresAt],
   );
 
   if (!open) return null;
@@ -115,6 +122,7 @@ export function DownloadDialog({
 
   const onCopyPrompt = async () => {
     try {
+      if (!url) return;
       await navigator.clipboard.writeText(prompt);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -214,7 +222,7 @@ export function DownloadDialog({
             {error ? (
               <span className="text-ms-red">{error}</span>
             ) : (
-              <>Download link {expiresIn} — anyone holding it can fetch the bytes.</>
+              <>Signed URL {expiresIn} — anyone holding it can fetch the bytes.</>
             )}
           </p>
         )}
@@ -224,9 +232,10 @@ export function DownloadDialog({
           <button
             type="button"
             onClick={() => void onCopyPrompt()}
+            disabled={!isReady}
             className="ms-btn-primary"
           >
-            {copied ? "Copied ✓" : "Copy prompt"}
+            {copied ? "Copied ✓" : isReady ? "Copy prompt" : "Preparing URL…"}
           </button>
           <button
             type="button"
@@ -256,11 +265,18 @@ function buildAgentPrompt(args: {
   description: string;
   category: string | null;
   tags: string[];
+  url: string | null;
+  expiresAt: string | null;
 }): string {
   const lines = [
     `I want to use the "${args.skillName}" skill from The Curator.`,
+    "Download the skill bundle from this short-lived signed URL, then install or inspect the SKILL.md in the bundle:",
+    args.url ?? "Preparing signed URL...",
     "",
   ];
+  if (args.expiresAt) {
+    lines.push(`The URL expires at ${args.expiresAt}. If it is expired, ask me to reopen The Curator and copy a fresh prompt.`);
+  }
   if (args.description) {
     lines.push(`What it does: ${args.description}`);
   }

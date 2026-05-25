@@ -141,6 +141,27 @@ def key_queue_classifier() -> str:
     return "queue:classifier"
 
 
+def key_queue_defender() -> str:
+    """M5-2: defender scan queue. Producers: classifier worker (on success).
+    Consumer: defender worker (BLPOP loop)."""
+    return "queue:defender"
+
+
+def key_queue_notifications() -> str:
+    """M5-5: notifier queue. Placeholder producer in M5-2 (defender worker)."""
+    return "queue:notifications"
+
+
+def key_notif_sent(idempotency_key: str) -> str:
+    """M5-5: notifier dedupe lock. SETNX with TTL; presence = already sent."""
+    return f"notif:sent:{idempotency_key}"
+
+
+def key_admin_recipients() -> str:
+    """M5-5: cached Graph admin-recipient list. Short TTL."""
+    return "admin:recipients"
+
+
 def key_lock_publish(skill_id: str) -> str:
     return f"lock:publish:{skill_id}"
 

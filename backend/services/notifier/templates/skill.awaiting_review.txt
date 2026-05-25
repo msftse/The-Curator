@@ -1,0 +1,10 @@
+A skill is ready for human review.
+
+Skill:           {skill_name}
+ID:              {skill_id}
+Version:         {version}
+Classifier:      {classifier_status}
+Defender status: {defender_status} ({defender_severity})
+
+Open the review queue to approve, reject, or quarantine.
+Review URL: {review_url}

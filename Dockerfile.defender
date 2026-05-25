@@ -1,0 +1,66 @@
+# syntax=docker/dockerfile:1.7
+
+# Defender worker image (M5-2).
+# Built from the repo root: `docker build -f Dockerfile.defender -t skillhub-defender .`
+#
+# Mirror of Dockerfile.classifier — same builder stage so a multi-image CI
+# build reuses BuildKit cache mounts. The runtime layer skips the `k8s`
+# extra (workers never talk to the K8s API directly).
+#
+# K8s readiness/liveness use an exec-based pgrep probe rather than HTTP
+# because the worker has no HTTP surface. The probe is defined in the
+# Deployment manifest (charts/.../defender/deployment.yaml).
+
+ARG PYTHON_VERSION=3.12-slim
+
+# ---------- builder ----------
+FROM python:${PYTHON_VERSION} AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=1 \
+    UV_PROJECT_ENVIRONMENT=/opt/venv
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+ADD https://astral.sh/uv/install.sh /uv-installer.sh
+RUN sh /uv-installer.sh && rm /uv-installer.sh
+ENV PATH="/root/.local/bin:${PATH}"
+
+WORKDIR /app
+
+COPY pyproject.toml uv.lock ./
+RUN uv venv /opt/venv \
+    && uv sync --frozen --no-dev --python /opt/venv/bin/python
+
+COPY backend ./backend
+RUN uv pip install --python /opt/venv/bin/python --no-deps .
+
+# ---------- runtime ----------
+FROM python:${PYTHON_VERSION} AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:${PATH}"
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates tini \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 10001 app \
+    && useradd --system --uid 10001 --gid app --home /app --shell /sbin/nologin app
+
+WORKDIR /app
+
+COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /app/backend /app/backend
+
+USER 10001:10001
+
+# Long-running BLPOP loop on `queue:defender` — no port, no HTTP healthcheck.
+# KEDA scales replicas based on `LLEN queue:defender`.
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["python", "-m", "backend.workers.defender"]

@@ -5,9 +5,39 @@ export type SkillStatus =
   | "approved"
   | "rejected"
   | "stale"
-  | "archived";
+  | "archived"
+  | "quarantined";
 
 export type ClassifierStatus = "queued" | "running" | "done" | "failed";
+
+// M5-2 defender state machine. `flagged` = scanner emitted findings;
+// `failed` = scanner crashed (janitor will re-queue).
+export type DefenderStatus =
+  | "pending"
+  | "scanning"
+  | "clean"
+  | "flagged"
+  | "failed";
+
+export type DefenderSeverity = "clean" | "low" | "medium" | "high" | "critical";
+
+export interface DefenderFinding {
+  rule: string;
+  severity: "low" | "medium" | "high" | "critical";
+  location: string;
+  excerpt: string;
+  explanation: string;
+}
+
+export interface DefenderReport {
+  overall_severity: DefenderSeverity;
+  findings: DefenderFinding[];
+  model: string;
+  scanned_at: string;
+  scan_duration_ms: number;
+  token_usage: { input_tokens: number; output_tokens: number };
+  notes?: string;
+}
 
 export interface Classification {
   category: string;
@@ -45,10 +75,18 @@ export interface SkillListItem {
   /** Contributor-supplied tags from the upload form. Merged with
    *  `classification.tags` (user order first, dedup case-insensitive, cap 8). */
   user_tags: string[];
+  defender_status?: DefenderStatus;
+  defender_severity?: DefenderSeverity | null;
+  defender_report?: DefenderReport | null;
+  defender_scanned_at?: string | null;
 }
 
 export interface SkillDetail extends SkillListItem {
   skill_md_text: string | null;
+  quarantined_at?: string | null;
+  quarantined_by?: string | null;
+  quarantine_justification?: string | null;
+  quarantine_expires_at?: string | null;
 }
 
 export interface UsageEventBody {
@@ -144,6 +182,23 @@ export interface SnapshotListItem {
   size_bytes: number;
 }
 
+// ---- M5-7 — Curator schedule -------------------------------------------
+
+export interface CuratorSchedule {
+  cron: string;
+  timezone: string;
+  enabled: boolean;
+  updated_by: string | null;
+  updated_at: string;
+}
+
+export interface CuratorScheduleUpdate {
+  cron: string;
+  timezone: string;
+  enabled: boolean;
+  mode: "weekly" | "custom";
+}
+
 // ---- Curator review (M3) ------------------------------------------------
 
 export type ProposalKind = "patch" | "merge" | "keep";
@@ -228,4 +283,15 @@ export interface CuratorReviewRunRecord {
 export interface ReviewListResponse {
   proposals: ReviewProposal[];
   total: number;
+}
+
+
+export interface JanitorQueueResult {
+  scanned: number;
+  requeued: number;
+}
+
+export interface JanitorResult {
+  classifier: JanitorQueueResult;
+  defender: JanitorQueueResult;
 }

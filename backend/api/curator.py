@@ -54,6 +54,7 @@ from backend.models.review import (
     ReviewListResponse,
     ReviewProposal,
 )
+from backend.models.schedule import CuratorSchedule, CuratorScheduleUpdate
 from backend.models.skill import SkillDoc
 from backend.services import (
     catalog as catalog_svc,
@@ -69,6 +70,9 @@ from backend.services import (
 )
 from backend.services import (
     curator_rollback as curator_rollback_svc,
+)
+from backend.services import (
+    curator_schedule as curator_schedule_svc,
 )
 from backend.services import (
     curator_state as curator_state_svc,
@@ -104,6 +108,10 @@ def _to_item(doc: SkillDoc) -> SkillListItem:
         pinned=doc.pinned,
         user_category=doc.user_category,
         user_tags=list(doc.user_tags),
+        defender_status=doc.defender_status,
+        defender_severity=doc.defender_severity,
+        defender_report=doc.defender_report,
+        defender_scanned_at=doc.defender_scanned_at,
     )
 
 
@@ -397,6 +405,48 @@ async def status_endpoint(
     )
 
 
+@router.get("/schedule", response_model=CuratorSchedule)
+async def get_schedule_endpoint(
+    _user: User = Depends(_require_admin),
+    system_state: ContainerProxy = Depends(get_system_state_container),
+) -> CuratorSchedule:
+    """Return the curator schedule doc (default = weekly Sunday 03:00 UTC).
+
+    The K8s CronJob's `.spec.schedule` is reconciled to this value by the
+    `curator_schedule_reconciler` worker; the field returned here is the
+    desired schedule, not the live CronJob spec.
+    """
+    return await curator_schedule_svc.get_schedule(system_state=system_state)
+
+
+@router.put("/schedule", response_model=CuratorSchedule)
+async def put_schedule_endpoint(
+    body: CuratorScheduleUpdate,
+    user: User = Depends(_require_admin),
+    system_state: ContainerProxy = Depends(get_system_state_container),
+    audit: ContainerProxy = Depends(get_audit_container),
+) -> CuratorSchedule:
+    """Replace the curator schedule. Admin-only.
+
+    Cron syntax is validated by `CuratorScheduleUpdate` (Pydantic) — a
+    422 with the field error is returned for malformed input. The
+    Cosmos-first write happens before the audit row (AGENTS.md §4 rule 1),
+    and the immutable audit record carries `before`/`after` for diffing.
+    The K8s CronJob is patched out-of-band by
+    `backend/workers/curator_schedule_reconciler.py`; this endpoint does
+    not touch the K8s API directly.
+    """
+    return await curator_schedule_svc.put_schedule(
+        system_state=system_state,
+        audit=audit,
+        actor=user.email,
+        actor_oid=user.oid,
+        cron=body.cron,
+        timezone=body.timezone,
+        enabled=body.enabled,
+    )
+
+
 @router.get("/snapshots", response_model=list[SnapshotListItem])
 async def list_snapshots_endpoint(
     _user: User = Depends(_require_admin),
@@ -503,13 +553,20 @@ async def janitor(
     skills: ContainerProxy = Depends(get_skills_container),
     audit: ContainerProxy = Depends(get_audit_container),
     redis: Redis = Depends(get_redis_client),
-) -> dict[str, int]:
-    return await janitor_svc.janitor_classifier_queue(
+) -> dict[str, dict[str, int]]:
+    classifier_result = await janitor_svc.janitor_classifier_queue(
         skills=skills,
         audit=audit,
         redis=redis,
         settings=settings,
     )
+    defender_result = await janitor_svc.janitor_defender_queue(
+        skills=skills,
+        audit=audit,
+        redis=redis,
+        settings=settings,
+    )
+    return {"classifier": classifier_result, "defender": defender_result}
 
 
 # ---- M3 — Curator LLM review endpoints ---------------------------------

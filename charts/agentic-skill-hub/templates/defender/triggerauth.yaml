@@ -1,0 +1,25 @@
+{{- /*
+KEDA TriggerAuthentication for the defender Redis scaler.
+
+Same shape and same rationale as the classifier's TriggerAuth — KEDA's
+Redis scaler can't use Entra workload identity for the data plane, so
+we hand it an access key sourced from Key Vault via the defender
+SecretProviderClass with `secretObjects.syncSecret.enabled: true`.
+
+The defender app pods themselves still authenticate to Redis with
+workload identity (redis_use_entra=true).
+*/ -}}
+{{- $component := "defender" -}}
+{{- $ctx := dict "component" $component "Chart" .Chart "Release" .Release "Values" .Values -}}
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: {{ printf "%s-redis" (include "skillhub.componentName" $ctx) }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "skillhub.componentLabels" $ctx | nindent 4 }}
+spec:
+  secretTargetRef:
+    - parameter: password
+      name: {{ printf "%s-redis-keda" (include "skillhub.componentName" $ctx) }}
+      key: redis-keda-key

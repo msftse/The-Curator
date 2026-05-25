@@ -238,5 +238,16 @@ Next steps:
   2. Re-deploy the App Service with the bicepparam values above.
   3. Re-deploy the SWA with the frontend env vars above (LOCAL_DEV must NOT be
      set in cloud — backend will refuse to boot if AUTH_MODE=stub without it).
+  4. [M5-5 notifier] If you intend to run the notifier worker with
+     NOTIFIER_GRAPH_PROVIDER=azure (production), grant the notifier UAMI
+     the Microsoft Graph application permission 'GroupMember.Read.All'
+     and have a Global Administrator (or Privileged Role Administrator)
+     grant tenant-wide admin consent:
+       az ad app permission add --id <notifier-app-id> \\
+           --api 00000003-0000-0000-c000-000000000000 \\
+           --api-permissions 98830695-27a2-44f7-8c18-0c3ebc9698f6=Role
+       az ad app permission admin-consent --id <notifier-app-id>
+     Local dev uses NOTIFIER_GRAPH_PROVIDER=fake which returns a static
+     admin list and needs no consent.
 ==============================================================================
 EOF

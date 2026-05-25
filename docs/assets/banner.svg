@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 420" width="1280" height="420">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#9bffcb"/>
+      <stop offset="0.5" stop-color="#00ff88"/>
+      <stop offset="1" stop-color="#00b86b"/>
+    </linearGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#04100a"/>
+      <stop offset="1" stop-color="#020806"/>
+    </linearGradient>
+    <radialGradient id="vignette" cx="0.5" cy="0.5" r="0.7">
+      <stop offset="0" stop-color="#00ff88" stop-opacity="0.06"/>
+      <stop offset="0.6" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0.85"/>
+    </radialGradient>
+    <radialGradient id="core" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ccffe4" stop-opacity="0.7"/>
+      <stop offset="1" stop-color="#00ff88" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="bigGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="10" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#0c2417" stroke-width="1"/>
+    </pattern>
+    <pattern id="scan" width="4" height="4" patternUnits="userSpaceOnUse">
+      <rect width="4" height="2" fill="#000" opacity="0.18"/>
+    </pattern>
+  </defs>
+
+  <!-- bg layers -->
+  <rect width="1280" height="420" fill="url(#bg)"/>
+  <rect width="1280" height="420" fill="url(#grid)" opacity="0.6"/>
+  <circle cx="640" cy="210" r="320" fill="url(#core)"/>
+  <rect width="1280" height="420" fill="url(#vignette)"/>
+
+  <!-- left mark -->
+  <g transform="translate(80,90)">
+    <rect x="0" y="0" width="240" height="240" rx="40" fill="#04100a" stroke="#0f2a18" stroke-width="2"/>
+    <g transform="translate(0,0)">
+      <!-- C brackets -->
+      <g filter="url(#glow)" stroke="url(#g)" stroke-width="9" stroke-linecap="square" fill="none">
+        <path d="M 178 64 L 84 64 L 84 96"/>
+        <path d="M 178 180 L 84 180 L 84 148"/>
+      </g>
+      <!-- skill bars -->
+      <g transform="translate(102,102)" filter="url(#glow)">
+        <rect x="0"  y="0"  width="60" height="9" rx="2" fill="#1f3a26"/>
+        <rect x="0"  y="18" width="74" height="9" rx="2" fill="url(#g)"/>
+        <rect x="0"  y="36" width="48" height="9" rx="2" fill="#1f3a26"/>
+      </g>
+      <!-- scan beam -->
+      <line x1="86" y1="122" x2="178" y2="122" stroke="#9bffcb" stroke-width="1.4" opacity="0.85" filter="url(#bigGlow)"/>
+      <circle cx="178" cy="122" r="6" fill="#ccffe4" filter="url(#bigGlow)"/>
+    </g>
+  </g>
+
+  <!-- wordmark group -->
+  <g transform="translate(380,170)" font-family="ui-monospace, 'SF Mono', Menlo, monospace">
+    <!-- prompt/bracket marker -->
+    <text x="0" y="0" font-size="84" font-weight="800" fill="#00ff88" filter="url(#bigGlow)">▸</text>
+
+    <!-- chromatic-aberration shadow layers -->
+    <text x="68" y="0" font-size="96" font-weight="800" letter-spacing="-3" fill="#ff2d6b" opacity="0.55">the-curator</text>
+    <text x="64" y="0" font-size="96" font-weight="800" letter-spacing="-3" fill="#00e0ff" opacity="0.55">the-curator</text>
+    <!-- main wordmark -->
+    <text x="66" y="0" font-size="96" font-weight="800" letter-spacing="-3" fill="#e9fff4" filter="url(#glow)">the-curator</text>
+
+    <!-- ascii rule -->
+    <text x="68" y="38" font-size="14" fill="#0f4a2b" letter-spacing="4">────────────────────────────────────────</text>
+
+    <!-- tagline -->
+    <text x="68" y="74" font-size="22" font-weight="600" fill="#00ff88" letter-spacing="6">GOVERNED SKILLS FOR AGENTS</text>
+
+    <!-- pipeline strip -->
+    <g transform="translate(68,108)" font-size="16" letter-spacing="2" fill="#7ad8a7">
+      <text x="0" y="0">classify</text>
+      <text x="100" y="0" fill="#0f4a2b">→</text>
+      <text x="124" y="0">scan</text>
+      <text x="190" y="0" fill="#0f4a2b">→</text>
+      <text x="214" y="0">catalog</text>
+      <text x="310" y="0" fill="#0f4a2b">→</text>
+      <text x="334" y="0" fill="#00ff88">curate</text>
+    </g>
+  </g>
+
+  <!-- top-right REC + telemetry strip -->
+  <g transform="translate(1240,40)" text-anchor="end" font-family="ui-monospace,Menlo,monospace">
+    <g>
+      <circle cx="-110" cy="-4" r="5" fill="#ff4d4d" filter="url(#glow)"/>
+      <text x="-94" y="0" font-size="12" fill="#7ad8a7" letter-spacing="3">REC</text>
+    </g>
+    <text x="0" y="0" font-size="12" fill="#3b7a55" letter-spacing="2">SYS://CURATOR · v0.14.0 · M5</text>
+  </g>
+
+  <!-- bottom telemetry -->
+  <g transform="translate(40,400)" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="#3b7a55" letter-spacing="2">
+    <text x="0" y="0">[catalog: stable] · [defender: armed] · [curator: weekly · sun 03:00 UTC] · [notifier: acs]</text>
+  </g>
+
+  <!-- corner ticks -->
+  <g stroke="#1f3a26" stroke-width="2" fill="none">
+    <path d="M 24 24 L 24 64 M 24 24 L 64 24"/>
+    <path d="M 1256 24 L 1256 64 M 1256 24 L 1216 24"/>
+    <path d="M 24 396 L 24 356 M 24 396 L 64 396"/>
+    <path d="M 1256 396 L 1256 356 M 1256 396 L 1216 396"/>
+  </g>
+
+  <!-- scanlines overlay -->
+  <rect width="1280" height="420" fill="url(#scan)"/>
+</svg>

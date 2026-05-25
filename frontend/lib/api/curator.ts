@@ -2,7 +2,10 @@
 import { call, callText } from "./client";
 import type {
   CuratorRunRecord,
+  CuratorSchedule,
+  CuratorScheduleUpdate,
   CuratorStatus,
+  JanitorResult,
   ReviewListResponse,
   ReviewProposal,
   RollbackResult,
@@ -13,6 +16,17 @@ import type {
 export const curator = {
   status(): Promise<CuratorStatus> {
     return call<CuratorStatus>("/v1/admin/curator/status");
+  },
+  // ---- M5-7 schedule editor --------------------------------------------
+  getSchedule(): Promise<CuratorSchedule> {
+    return call<CuratorSchedule>("/v1/admin/curator/schedule");
+  },
+  putSchedule(body: CuratorScheduleUpdate): Promise<CuratorSchedule> {
+    return call<CuratorSchedule>("/v1/admin/curator/schedule", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
   },
   pause(): Promise<CuratorStatus> {
     return call<CuratorStatus>("/v1/admin/curator/pause", { method: "POST" });
@@ -31,6 +45,9 @@ export const curator = {
     return call<RollbackResult>(`/v1/admin/curator/rollback${q}`, {
       method: "POST",
     });
+  },
+  janitor(): Promise<JanitorResult> {
+    return call<JanitorResult>("/v1/admin/curator/janitor", { method: "POST" });
   },
   pin(skillId: string): Promise<SkillListItem> {
     return call<SkillListItem>(

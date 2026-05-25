@@ -59,11 +59,18 @@ def get_blob_service(settings: Settings) -> BlobServiceClient:
 
 
 async def ensure_containers(svc: BlobServiceClient, settings: Settings) -> None:
-    """Create published / archive / snapshots / curator containers idempotently."""
+    """Create published / archive / snapshots / quarantine / curator containers idempotently.
+
+    `quarantine` is the M5 terminal bucket for skills an admin has rejected
+    as malicious. See AGENTS.md §5 — it is the ONE container in the system
+    where delete-after-N-days is permitted, and it is owned by a dedicated
+    janitor (M5-3); the curator and backend MUST NOT delete from it.
+    """
     for name in (
         settings.blob_published_container,
         settings.blob_archive_container,
         settings.blob_snapshots_container,
+        settings.blob_quarantine_container,
         settings.curator_reports_container,
     ):
         container = svc.get_container_client(name)
@@ -75,6 +82,17 @@ async def ensure_containers(svc: BlobServiceClient, settings: Settings) -> None:
 
 
 def published_blob_path(skill_id: str, version: str) -> str:
+    return f"{skill_id}/{version}/bundle.tar.gz"
+
+
+def quarantine_blob_path(skill_id: str, version: str) -> str:
+    """Path used inside the `quarantine/` container (M5-3).
+
+    Mirrors `published_blob_path` so the same `{skill}/{version}/bundle.tar.gz`
+    layout works across containers. The quarantine container is the ONE
+    place delete-after-N-days is permitted (AGENTS.md §5), owned by
+    `backend.services.quarantine_janitor`.
+    """
     return f"{skill_id}/{version}/bundle.tar.gz"
 
 
@@ -105,7 +123,7 @@ async def signed_download_url(
     *,
     skill_id: str,
     version: str,
-    ttl_minutes: int = 15,
+    ttl_minutes: int = 1,
 ) -> str:
     """Generate a short-lived SAS download URL for a published bundle.
 
