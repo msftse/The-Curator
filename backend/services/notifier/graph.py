@@ -106,14 +106,18 @@ class AzureGraphClient:
             log.warning("graph.admin_group_not_configured")
             return []
         client = self._ensure_client()
-        # GET /groups/{id}/members?$select=mail,userPrincipalName
-        members = await client.groups.by_group_id(gid).members.get()
         out: list[str] = []
-        # The SDK returns a paged collection; iterate `.value`.
-        for m in getattr(members, "value", []) or []:
-            email = getattr(m, "mail", None) or getattr(m, "user_principal_name", None)
-            if email:
-                out.append(email.lower())
+        request_builder = client.groups.by_group_id(gid).members
+        page = await request_builder.get()
+        while page is not None:
+            for m in getattr(page, "value", []) or []:
+                email = getattr(m, "mail", None) or getattr(m, "user_principal_name", None)
+                if email:
+                    out.append(email.lower())
+            next_link = getattr(page, "odata_next_link", None)
+            if not next_link:
+                break
+            page = await client.groups.by_group_id(gid).members.with_url(next_link).get()
         # De-dupe while preserving order.
         seen: set[str] = set()
         deduped: list[str] = []

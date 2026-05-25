@@ -116,3 +116,18 @@ def test_render_missing_keys_default_to_empty():
     assert "X" in out.subject
     # Other placeholders are blank, not a crash.
     assert out.plain_text  # no exception
+
+
+def test_render_html_escapes_payload_values():
+    out = render_template(
+        "skill.uploaded",
+        {
+            "skill_name": "<img src=x onerror=alert(1)>",
+            "skill_id": "x",
+            "version": "1.0.0",
+            "uploader": "attacker@example.com",
+            "uploaded_at": "2026-01-01T00:00:00Z",
+        },
+    )
+    assert "<img src=x" not in out.html
+    assert "&lt;img src=x" in out.html

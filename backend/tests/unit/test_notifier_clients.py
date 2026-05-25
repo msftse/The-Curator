@@ -13,6 +13,7 @@ from backend.services.notifier import (
     make_graph_client,
 )
 from backend.services.notifier.acs import AcsEmailMessage
+from backend.services.notifier.graph import AzureGraphClient
 
 # ---- NotificationEvent ------------------------------------------------
 
@@ -112,3 +113,45 @@ def test_factory_rejects_unknown():
         make_acs_client("nope")
     with pytest.raises(ValueError):
         make_graph_client("nope")
+
+
+async def test_azure_graph_walks_all_pages(monkeypatch):
+    from types import SimpleNamespace
+
+    class _MembersBuilder:
+        def __init__(self, pages):
+            self._pages = pages
+            self.urls: list[str] = []
+
+        async def get(self):
+            return self._pages[0]
+
+        def with_url(self, url: str):
+            self.urls.append(url)
+
+            class _Next:
+                async def get(_self):
+                    return self._pages[1]
+
+            return _Next()
+
+    page1 = SimpleNamespace(
+        value=[SimpleNamespace(mail="a@org", user_principal_name=None)],
+        odata_next_link="next-page",
+    )
+    page2 = SimpleNamespace(
+        value=[SimpleNamespace(mail=None, user_principal_name="B@Org")],
+        odata_next_link=None,
+    )
+    members = _MembersBuilder([page1, page2])
+    fake_client = SimpleNamespace(
+        groups=SimpleNamespace(by_group_id=lambda _gid: SimpleNamespace(members=members))
+    )
+    settings = type(
+        "S", (), {"entra_group_id_admin_notifications": "g", "entra_group_id_admin": ""}
+    )()
+    client = AzureGraphClient(settings)  # type: ignore[arg-type]
+    monkeypatch.setattr(client, "_ensure_client", lambda: fake_client)
+
+    assert await client.list_admin_recipients() == ["a@org", "b@org"]
+    assert members.urls == ["next-page"]

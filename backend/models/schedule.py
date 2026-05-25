@@ -70,22 +70,23 @@ def validate_cron(expr: str) -> str:
     fields = expr.split()
     for raw, (lo, hi) in zip(fields, _BOUNDS, strict=True):
         for piece in raw.split(","):
-            value = piece.split("/", 1)[0]
+            parts = piece.split("/", 1)
+            value = parts[0]
+            if len(parts) == 2:
+                step = int(parts[1])
+                if step < 1 or step > hi:
+                    raise ValueError(f"cron field {raw!r} step out of range [1,{hi}]")
             if value == "*":
                 continue
             if "-" in value:
                 a_str, b_str = value.split("-", 1)
                 a, b = int(a_str), int(b_str)
                 if a < lo or b > hi or a > b:
-                    raise ValueError(
-                        f"cron field {raw!r} out of range [{lo},{hi}]"
-                    )
+                    raise ValueError(f"cron field {raw!r} out of range [{lo},{hi}]")
             else:
                 n = int(value)
                 if n < lo or n > hi:
-                    raise ValueError(
-                        f"cron field {raw!r} out of range [{lo},{hi}]"
-                    )
+                    raise ValueError(f"cron field {raw!r} out of range [{lo},{hi}]")
     return expr
 
 

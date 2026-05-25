@@ -53,9 +53,6 @@ param defenderPrincipalId string = ''
 @description('Notifier UAMI principal ID (M5).')
 param notifierPrincipalId string = ''
 
-@description('ACS resource ID for notifier role scoping (M5). Empty = skip ACS RBAC.')
-param acsResourceId string = ''
-
 @description('Whether to assign Cosmos data-plane RBAC. Prod=true, dev/staging=false (key-based).')
 param assignCosmosDataPlane bool = false
 
@@ -72,15 +69,12 @@ var storageBlobDelegatorRoleId = 'db58b8e5-c6ad-4a2a-8342-4190687cbf4a'  // Stor
 // Blob Data Contributor parity with classifier/backend for simplicity in v1).
 // Cognitive Services User on the AI Services account is granted out-of-band
 // the same way the classifier already does (FOUNDRY_DEPLOYMENT side).
-// M5 — Notifier sends email via ACS. The built-in role is "Contributor" on
-// the ACS resource for v1 (Azure has no dedicated "ACS Sender" data-plane
-// role today — the SMS/Email send is gated by the connection string, which
-// the notifier reads from KV). Document & revisit when ACS publishes a
-// granular role. KV Secrets User covers the connection-string read.
+// M5 — Notifier sends email with the ACS connection string from Key Vault, so
+// it does not need ACS control-plane RBAC for v1. If we switch to Managed
+// Identity auth for ACS later, add the narrowest ACS-specific role available.
 // Graph `GroupMember.Read.All` is an Entra app permission, NOT an Azure RBAC
 // role — admin-consented via setup-entra.sh extension (M5-5); not auto-granted
 // here by design.
-var acsContributorRoleId = 'b24988ac-6180-42a0-ab88-20f7382dd24c'  // Contributor (placeholder until ACS gets a data role)
 
 resource kv 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
   name: keyVaultName
@@ -91,10 +85,6 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
 resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2024-05-15' existing = {
   name: cosmosAccountName
 }
-resource acs 'Microsoft.Communication/communicationServices@2023-04-01' existing = if (!empty(acsResourceId)) {
-  name: last(split(acsResourceId, '/'))
-}
-
 // Components that get the full data-plane grant. Frontend is intentionally
 // absent; backend-k8s-jobs is K8s-only and not represented here. Defender
 // (M5) joins the data plane: it reads bundles, writes the defender report
@@ -208,9 +198,7 @@ output assignmentCount int = length(dataPlaneComponents)
 // Cosmos directly, does not read/write Blob, and does not need Blob
 // Delegator. It only needs:
 //   1. Key Vault Secrets User (read `acs-connection-string`).
-//   2. Contributor on the ACS resource (placeholder until ACS publishes a
-//      dedicated send-only data role).
-//   3. Microsoft Graph `GroupMember.Read.All` — Entra app permission, NOT
+//   2. Microsoft Graph `GroupMember.Read.All` — Entra app permission, NOT
 //      Azure RBAC. Granted out-of-band via setup-entra.sh extension in M5-5.
 //      Intentionally not auto-granted here so tenant-admin consent remains
 //      explicit (plan §12 risk #1).
@@ -222,16 +210,6 @@ resource notifierKvAssignment 'Microsoft.Authorization/roleAssignments@2022-04-0
   properties: {
     principalId: notifierPrincipalId
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', kvSecretsUserRoleId)
-    principalType: 'ServicePrincipal'
-  }
-}
-
-resource notifierAcsAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(notifierPrincipalId) && !empty(acsResourceId)) {
-  name: guid(acsResourceId, notifierPrincipalId, 'acs-sender')
-  scope: acs
-  properties: {
-    principalId: notifierPrincipalId
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acsContributorRoleId)
     principalType: 'ServicePrincipal'
   }
 }

@@ -6,10 +6,9 @@
 // `DoNotReply@<random-guid>.azurecomm.net`. Custom domains are out of scope
 // for M5 (plan §13).
 //
-// The notifier worker reads the connection string from Key Vault. We expose
-// it as an output here so the parent template can stitch it into a
-// `Microsoft.KeyVault/vaults/secrets` resource — keeping this module free of
-// cross-resource coupling.
+// The notifier worker reads the connection string from Key Vault. The parent
+// template writes it directly with `listKeys()` so it never appears as a module
+// output or deployment output.
 //
 // Daily send limit on the managed domain is ~100 emails (plan §12 risk #2).
 // Fine for admin notifications; flag if usage grows.
@@ -63,12 +62,6 @@ resource acs 'Microsoft.Communication/communicationServices@2023-04-01' = {
     ]
   }
 }
-
-// Connection string for the notifier worker. Surfaced as an output so the
-// parent template can write it into Key Vault as the `acs-connection-string`
-// secret. Never echoed to logs — KV is the only legitimate destination.
-#disable-next-line outputs-should-not-contain-secrets
-output connectionString string = acs.listKeys().primaryConnectionString
 
 output acsResourceId string = acs.id
 output acsName string = acs.name

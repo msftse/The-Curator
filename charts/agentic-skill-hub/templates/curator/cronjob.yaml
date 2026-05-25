@@ -21,10 +21,10 @@ metadata:
     # are owned by `backend/workers/curator_schedule_reconciler.py`, which
     # watches the `curator_schedule` doc in the Cosmos `system_state`
     # container and patches the CronJob when admins edit the schedule in
-    # the admin UI. The value rendered from `.Values.curator.schedule`
-    # here is only the *initial* (post-install) schedule; subsequent
-    # Helm upgrades intentionally do not overwrite an already-patched
-    # value, which is why the reconciler also sets this annotation.
+    # the admin UI. Helm upgrades still render `.Values.curator.schedule`;
+    # if that temporarily drifts from the Cosmos doc, the reconciler patches
+    # it back on its next loop. This annotation documents ownership and is
+    # also kept in sync by the reconciler.
     curator.skill-hub/managed-by: reconciler
 spec:
   schedule: {{ .Values.curator.schedule | quote }}
