@@ -30,6 +30,10 @@ const STATUS_TONES: Record<SkillStatus, Tone> = {
     classes: "bg-bg-2 text-ink-2 border border-line-2",
     dot: "bg-ink-2",
   },
+  quarantined: {
+    classes: "bg-danger-bg text-danger-fg border border-danger-border",
+    dot: "bg-ms-red",
+  },
 };
 
 const CLASSIFIER_TONES: Record<ClassifierStatus, Tone> = {

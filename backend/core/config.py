@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     blob_published_container: str = "published"
     blob_archive_container: str = "archive"
     blob_snapshots_container: str = "snapshots"
+    # M5 — terminal bucket for skills an admin has rejected as malicious.
+    # The ONE container in the system where delete-after-N-days is allowed,
+    # owned by a dedicated janitor (M5-3). See AGENTS.md §5.
+    # Env: BLOB_QUARANTINE_CONTAINER. Keep this explicit — pydantic-settings
+    # maps field names to env vars directly unless a validation alias is set.
+    blob_quarantine_container: str = "quarantine"
 
     def use_blob_identity(self) -> bool:
         """True when the blob client should authenticate via DefaultAzureCredential."""
@@ -118,6 +124,59 @@ class Settings(BaseSettings):
     classifier_queue_key: str = "queue:classifier"
     classifier_blpop_timeout_seconds: int = 5
 
+    # ---- Defender (M5-2) ----
+    # Provider toggle. `foundry` calls Azure AI Foundry via the shared
+    # `FoundryLLMProvider`. `fake` is test-only — returns deterministic
+    # canned reports from `FakeDefenderProvider`.
+    defender_provider: Literal["foundry", "fake"] = "fake"
+    defender_model: str = "gpt-4o"
+    # Hard cap on the user-prompt char budget (≈4 chars/token). When the
+    # concatenated bundle exceeds this, the scanner short-circuits with
+    # `defender_status=failed` and a finding `rule=skill.too_large`.
+    defender_max_tokens_input: int = 32_000
+    defender_max_tokens_output: int = 2000
+    defender_queue_key: str = "queue:defender"
+    defender_blpop_timeout_seconds: int = 5
+    notifications_queue_key: str = "queue:notifications"
+
+    # ---- Notifier (M5-5) ----
+    # Provider toggle. `fake` captures sends in memory (default — used by
+    # unit tests and local-dev); `azure` calls Azure Communication Services
+    # via the lazily-imported `azure-communication-email` SDK.
+    notifier_provider: Literal["fake", "azure"] = "fake"
+    # Same shape for Graph: `fake` returns a static admin list so
+    # contributors don't need the tenant-admin-consented
+    # `GroupMember.Read.All` app permission locally.
+    notifier_graph_provider: Literal["fake", "azure"] = "fake"
+    # ACS auth — connection string (simplest, from Key Vault in cloud) OR
+    # endpoint + Managed Identity. Real client picks whichever is set.
+    acs_connection_string: str = ""
+    acs_endpoint: str = ""
+    acs_sender_address: str = "DoNotReply@example.azurecomm.net"
+    # Optional dedicated admin group for notifications; falls back to
+    # `entra_group_id_admin` if blank (so dev environments only need one).
+    entra_group_id_admin_notifications: str = ""
+    # Notifier worker tuning. Idempotency TTL matches the dedupe-window
+    # design in plan §5 (24h). Recipient cache is short by comparison so
+    # group-membership changes propagate within a quarter hour.
+    notifier_blpop_timeout_seconds: int = 5
+    notifier_dedupe_ttl_seconds: int = 86_400
+    notifier_recipients_cache_ttl_seconds: int = 900
+    # Optional base URL the templates use to build "open review" /
+    # "report URL" links. Leave blank in tests; chart sets it per env.
+    notifier_review_url_base: str = ""
+
+    # ---- Quarantine (M5-3) ----
+    # Days bundle bytes live in `quarantine/` before the dedicated
+    # quarantine janitor deletes them. AGENTS.md §5 carves this out as the
+    # ONE delete-after-N-days code path in the system. Default mirrors the
+    # `usage_events` 90-day window; operators can shorten in dev.
+    quarantine_retention_days: int = 30
+    # Minimum length for the admin-supplied justification on the
+    # `/admin/skills/{id}/quarantine` endpoint. Mirrors the defender
+    # override justification floor (`>=20 chars`, plan §3).
+    quarantine_min_justification_chars: int = 20
+
     # ---- Cache TTLs (seconds) ----
     cache_list_ttl_seconds: int = 60
     cache_item_ttl_seconds: int = 300
@@ -134,6 +193,13 @@ class Settings(BaseSettings):
     curator_reports_container: str = "curator"
     usage_loaders_30d_window_days: int = 30
     janitor_classifier_stale_multiplier: int = 5
+    # Defender janitor — re-queues skill docs stuck in
+    # `defender_status in ('pending', 'failed')` whose latest defender
+    # touch is older than this multiplier × defender_blpop_timeout_seconds.
+    # Mirrors `janitor_classifier_stale_multiplier`. See AGENTS.md §4 rule
+    # #4 — Cosmos is the source of truth, the queue is best-effort, and
+    # the janitor reconciles lost messages.
+    janitor_defender_stale_multiplier: int = 60
 
     # ---- Runtime topology (M4) ----
     # `inprocess` (default): /v1/admin/curator/run invokes execute_pass()

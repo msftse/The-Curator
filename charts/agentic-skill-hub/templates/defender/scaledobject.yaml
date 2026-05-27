@@ -1,0 +1,31 @@
+{{- $component := "defender" -}}
+{{- $ctx := dict "component" $component "Chart" .Chart "Release" .Release "Values" .Values -}}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "skillhub.componentName" $ctx }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "skillhub.componentLabels" $ctx | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "skillhub.componentName" $ctx }}
+    kind: Deployment
+  pollingInterval: {{ .Values.defender.keda.pollingInterval }}
+  cooldownPeriod: {{ .Values.defender.keda.cooldownPeriod }}
+  minReplicaCount: {{ .Values.defender.keda.minReplicaCount }}
+  maxReplicaCount: {{ .Values.defender.keda.maxReplicaCount }}
+  # Scale-to-zero. AGENTS.md §4 rule 4: the classifier worker writes the
+  # Cosmos doc + sets defender_status=pending BEFORE pushing to the queue,
+  # and the janitor sweep re-queues docs lost on scale-down so a pod
+  # crash mid-BLPOP can't lose data.
+  triggers:
+    - type: redis
+      metadata:
+        address: "{{ .Values.defender.env.REDIS_HOST }}:{{ .Values.defender.env.REDIS_PORT }}"
+        listName: {{ .Values.defender.keda.queueKey | quote }}
+        listLength: {{ .Values.defender.keda.queueLength | quote }}
+        enableTLS: "true"
+        databaseIndex: "0"
+      authenticationRef:
+        name: {{ printf "%s-redis" (include "skillhub.componentName" $ctx) }}

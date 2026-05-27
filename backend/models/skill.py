@@ -7,8 +7,13 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-SkillStatus = Literal["pending", "classified", "approved", "rejected", "stale", "archived"]
+SkillStatus = Literal[
+    "pending", "classified", "approved", "rejected", "stale", "archived", "quarantined"
+]
 ClassifierStatus = Literal["queued", "running", "done", "failed"]
+# M5-2: defender state machine. `pending` → `scanning` → `clean`|`flagged`|`failed`.
+# Worker re-tries `pending`/`failed` via the janitor sweep.
+DefenderStatus = Literal["pending", "scanning", "clean", "flagged", "failed"]
 
 
 # Canonical category taxonomy (PRD §7.2). The upload UI dropdown, the
@@ -96,3 +101,30 @@ class SkillDoc(BaseModel):
     # M0 ONLY: raw uploaded tar bytes live here (base64) until publish.
     # M1 will replace with a `staging/` Blob container — see publish.py TODO.
     pending_bundle_b64: str | None = None
+
+    # ---- Defender (M5-2) ----
+    # `pending` is the initial state at upload time. Set to `scanning` while
+    # the defender worker is running, then `clean` / `flagged` / `failed`.
+    # `defender_report` is the inline DefenderReport.model_dump() output (or
+    # None until the worker writes it). `defender_report_id` is reserved for
+    # the future ``defender_reports`` container; M5-2 stores the report
+    # inline and leaves the id null.
+    defender_status: DefenderStatus = "pending"
+    defender_severity: str | None = None  # mirror of report.overall_severity for filters
+    defender_report: dict | None = None
+    defender_report_id: str | None = None
+    defender_scanned_at: datetime | None = None
+
+    # ---- Quarantine (M5-3) ----
+    # Set when an admin moves a defender-flagged skill into the terminal
+    # `quarantine/` blob container. The justification text and actor are
+    # *also* recorded on the immutable audit row — these mirrors exist on
+    # the doc so the catalog detail page can show "why was this killed?"
+    # without a second Cosmos round-trip. `quarantine_expires_at` is the
+    # wall-clock deadline after which the quarantine janitor (the ONE
+    # delete-after-N-days code path; AGENTS.md §5) deletes the bundle
+    # bytes — the Cosmos doc itself is never deleted.
+    quarantined_at: datetime | None = None
+    quarantined_by: str | None = None
+    quarantine_justification: str | None = None
+    quarantine_expires_at: datetime | None = None

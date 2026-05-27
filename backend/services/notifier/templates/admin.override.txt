@@ -1,0 +1,10 @@
+An admin overrode a defender finding to approve a skill.
+
+Skill:         {skill_name}
+ID:            {skill_id}
+Version:       {version}
+Admin:         {actor}
+Severity:      {defender_severity}
+Justification: {justification}
+
+The skill has been moved back to the normal review pipeline.

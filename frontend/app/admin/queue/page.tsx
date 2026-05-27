@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { DefenderReportPanel } from "@/components/catalog/DefenderReportPanel";
 import { ClassifierBadge, StatusBadge } from "@/components/StatusBadge";
 import { api } from "@/lib/api/client";
 import type { SkillListItem } from "@/lib/api/types";
@@ -54,6 +55,18 @@ export default function ReviewQueuePage() {
     }
   }
 
+  async function classifyNow(id: string) {
+    setBusyId(id);
+    try {
+      await api.admin.classifyNow(id);
+      await load();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-[1280px] px-6 py-12">
       <header className="mb-6">
@@ -84,6 +97,7 @@ export default function ReviewQueuePage() {
               <th>Uploader</th>
               <th>Status</th>
               <th>Classifier</th>
+              <th>Defender</th>
               <th className="text-right">Actions</th>
             </tr>
           </thead>
@@ -115,15 +129,33 @@ export default function ReviewQueuePage() {
                 <td>
                   <ClassifierBadge status={r.classifier_status} />
                 </td>
+                <td className="min-w-[260px] max-w-[360px]">
+                  <DefenderReportPanel
+                    status={r.defender_status}
+                    skillStatus={r.status}
+                    severity={r.defender_severity}
+                    report={r.defender_report}
+                    scannedAt={r.defender_scanned_at}
+                    compact
+                  />
+                </td>
                 <td>
                   <div className="flex justify-end gap-2">
-                    <button
-                      disabled={busyId === r.skill_id}
-                      onClick={() => approve(r.skill_id)}
-                      className="ms-btn-success px-3 py-1 text-xs"
-                    >
-                      Approve
-                    </button>
+                    {(r.classifier_status !== "done" || r.classification === null) && (
+                      <button
+                        disabled={busyId === r.skill_id}
+                        onClick={() => classifyNow(r.skill_id)}
+                        className="rounded border border-ms-blue/30 px-3 py-1 text-xs font-medium text-ms-blue hover:bg-ms-blue/10 disabled:cursor-not-allowed disabled:opacity-50"
+                        title="Queue this skill for classifier retry now"
+                      >
+                        Classify now
+                      </button>
+                    )}
+                    <ApproveButton
+                      row={r}
+                      busy={busyId === r.skill_id}
+                      onApprove={() => approve(r.skill_id)}
+                    />
                     <button
                       disabled={busyId === r.skill_id}
                       onClick={() => reject(r.skill_id)}
@@ -164,5 +196,44 @@ export default function ReviewQueuePage() {
         )}
       </div>
     </div>
+  );
+}
+
+function canApprove(row: SkillListItem): boolean {
+  if (row.defender_status === "clean") return true;
+  if (row.defender_status !== "flagged") return false;
+  return row.defender_severity === "low" || row.defender_severity === "clean";
+}
+
+function approveTitle(row: SkillListItem): string {
+  if (canApprove(row)) return "Approve skill";
+  if (row.defender_status === "failed") {
+    return "Defender scan failed; rescan before approval";
+  }
+  if (row.defender_status === "flagged") {
+    return "Defender finding requires override or quarantine before approval";
+  }
+  return "Defender scan must complete before approval";
+}
+
+function ApproveButton({
+  row,
+  busy,
+  onApprove,
+}: {
+  row: SkillListItem;
+  busy: boolean;
+  onApprove: () => void;
+}) {
+  const enabled = canApprove(row) && !busy;
+  return (
+    <button
+      disabled={!enabled}
+      onClick={onApprove}
+      title={approveTitle(row)}
+      className="ms-btn-success px-3 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      Approve
+    </button>
   );
 }

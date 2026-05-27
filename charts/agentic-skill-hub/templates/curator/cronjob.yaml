@@ -16,6 +16,16 @@ metadata:
   namespace: {{ .Values.global.namespace }}
   labels:
     {{- include "skillhub.componentLabels" $ctx | nindent 4 }}
+  annotations:
+    # M5-7 — the live `.spec.schedule` and `.spec.suspend` of this CronJob
+    # are owned by `backend/workers/curator_schedule_reconciler.py`, which
+    # watches the `curator_schedule` doc in the Cosmos `system_state`
+    # container and patches the CronJob when admins edit the schedule in
+    # the admin UI. Helm upgrades still render `.Values.curator.schedule`;
+    # if that temporarily drifts from the Cosmos doc, the reconciler patches
+    # it back on its next loop. This annotation documents ownership and is
+    # also kept in sync by the reconciler.
+    curator.skill-hub/managed-by: reconciler
 spec:
   schedule: {{ .Values.curator.schedule | quote }}
   concurrencyPolicy: Forbid

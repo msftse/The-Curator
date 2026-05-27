@@ -1,0 +1,9 @@
+Your skill submission was REJECTED.
+
+Skill:       {skill_name}
+ID:          {skill_id}
+Version:     {version}
+Rejected by: {actor}
+Reason:      {reason}
+
+You can update the bundle and re-submit.

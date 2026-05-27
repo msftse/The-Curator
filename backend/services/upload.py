@@ -24,6 +24,11 @@ from backend.core.logging import bind, get_logger
 from backend.core.redis import key_queue_classifier
 from backend.models.skill import CATEGORY_TAXONOMY, SkillDoc
 from backend.services import audit as audit_svc
+from backend.services.notifier import (
+    build_event,
+    enqueue_notification,
+    make_idempotency_key,
+)
 from backend.services.skill_bundle import (
     build_tar,
     enforce_size,
@@ -151,6 +156,32 @@ async def handle_upload(
         await redis.rpush(key_queue_classifier(), doc.id)
     except Exception as exc:  # pragma: no cover - defensive
         log.warning("classifier_enqueue_failed", extra={"err": str(exc)})
+
+    # 4. Notifier producer — `skill.uploaded` to admins. Fire-and-forget;
+    #    `enqueue_notification` already swallows + logs on failure.
+    #    Cosmos write (step 1) is the source of truth (AGENTS.md §4 #1).
+    await enqueue_notification(
+        build_event(
+            "skill.uploaded",
+            skill_id=skill_id,
+            payload={
+                "skill_id": skill_id,
+                "version": version,
+                "skill_name": name,
+                "name": name,
+                "uploader": uploader,
+                "uploaded_at": doc.uploaded_at.isoformat(),
+                "description": description,
+            },
+            idempotency_key=make_idempotency_key(
+                "skill.uploaded",
+                skill_id=skill_id,
+                version=version,
+                extra=doc.id,
+            ),
+        ),
+        redis=redis,
+    )
 
     return doc
 

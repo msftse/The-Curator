@@ -4,6 +4,8 @@ import Link from "next/link";
 import { use } from "react";
 
 import { MarkdownView } from "@/components/MarkdownView";
+import { DefenderReportPanel } from "@/components/catalog/DefenderReportPanel";
+import { SkillDetailDefenderActions } from "@/components/catalog/SkillDetailDefenderActions";
 import { SkillDetailHeader } from "@/components/catalog/SkillDetailHeader";
 import { SkillDetailMeta } from "@/components/catalog/SkillDetailMeta";
 import { api } from "@/lib/api/client";
@@ -79,7 +81,17 @@ export default function CatalogSkillDetailPage({
         </article>
 
         <div className="lg:sticky lg:top-6 lg:self-start">
-          <SkillDetailMeta skill={data} />
+          <div className="flex flex-col gap-4">
+            <SkillDetailDefenderActions skill={data} />
+            <DefenderReportPanel
+              status={data.defender_status}
+              skillStatus={data.status}
+              severity={data.defender_severity}
+              report={data.defender_report}
+              scannedAt={data.defender_scanned_at}
+            />
+            <SkillDetailMeta skill={data} />
+          </div>
         </div>
       </div>
     </div>

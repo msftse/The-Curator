@@ -58,6 +58,10 @@ var secretNames = [
   'entra-spa-client-id'       // frontend SPA app reg
   'entra-group-id-admin'
   'entra-api-scope'           // api://<api-app-id>/access_as_user
+  // M5 — notifier worker reads this. Real value written by main.bicep from
+  // the ACS module's `connectionString` output (the seed is a placeholder
+  // overwritten on deploy).
+  'acs-connection-string'
 ]
 
 resource seededSecrets 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = [for n in secretNames: {

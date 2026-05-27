@@ -109,6 +109,77 @@ If you are tempted to add **any other** delete code path near skills or bundles:
 
 This invariant is enforced statically by `backend/tests/unit/test_never_delete_invariant.py`, which AST-scans the curator/rollback/snapshot/usage/janitor service + worker files for `delete_item(...)` and `delete_blob(...)` calls. The scan is scope-aware: `delete_blob` inside the body of `move_published_to_archive` is allowed; everywhere else is a hard test failure. `delete_item` is still forbidden everywhere.
 
+### Quarantine (M5) — the one delete-after-N-days exception
+
+The `quarantine/` blob container (provisioned in `infra/modules/storage.bicep`,
+created locally by `scripts/bootstrap_blob_containers.py`) holds bundles an
+admin has rejected as malicious. It is the ONE place in the system where
+delete-after-N-days is permitted, and it is owned by a dedicated quarantine
+janitor (landing in M5-3 at `backend/services/quarantine_janitor.py`). All
+other delete prohibitions stand: the curator, snapshot, usage, and main
+janitor code remain forbidden from `delete_blob` / `delete_item`.
+
+When M5-3 lands, the AST gate (`test_never_delete_invariant.py`) gains the
+quarantine janitor as a *guarded* file with its own narrow allowlist for
+the deletion callsite there — analogous to `move_published_to_archive`.
+Until then the gate already lists the placeholder path so adding the file
+is a one-line allowlist change, not an architectural decision re-litigation.
+
+**Status (M5-3 landed).** `backend/services/quarantine_janitor.py` is now
+the guarded janitor file. Its lone `delete_blob` callsite lives inside
+`move_to_deleted_after_retention(...)` and is the only allowed delete
+in the entire skill data plane besides `move_published_to_archive`. Any
+new delete code path near skills, bundles, or quarantine bytes must
+follow the same pattern: a single named function, a verification
+precondition, and an audit row with `actor='system:quarantine_janitor'`.
+
+---
+
+### Defender + Notifier workers (M5)
+
+Two new background workers ship in M5. They follow the same conventions
+as the classifier worker (§4 rule #4): a `process_one(...)` entry-point
+for unit/integration tests, a long-running `main()` BLPOP loop for the
+deployed image, Cosmos-first writes, and Redis as ephemeral queue only.
+
+- **Defender** (`backend/workers/defender.py`) — consumes
+  `queue:defender`, scans staged upload bytes or the published Blob bundle
+  during an approved-skill rescan via Microsoft Foundry (LLM-only, no AV
+  engine), writes `defender_status` / `defender_severity` /
+  `defender_report` to the Cosmos skill doc, and emits one notifier event
+  per terminal outcome (`skill.awaiting_review` on clean,
+  `defender.flagged` on flagged). The fake provider
+  (`FakeDefenderScanner`) keeps unit + CI green without Foundry creds.
+  Approval is blocked while Defender is `pending`, `scanning`, or
+  `failed`; flagged medium/high/critical findings require an audit-logged
+  override or quarantine. Admins can requeue scans with
+  `POST /v1/admin/skills/{id}/defender-rescan`.
+- **Notifier** (`backend/workers/notifier.py`) — consumes
+  `queue:notifications`, resolves recipients (contributor email from
+  the skill doc; admin recipients via Microsoft Graph admin-group
+  lookup cached in Redis), renders the per-event template, and sends
+  through ACS email. Idempotency is enforced by a Redis `SET NX`
+  dedupe lock on `notif:sent:{idempotency_key}` so replays are no-ops.
+  Both ACS and Graph have fake clients used by every test that doesn't
+  require live cloud calls.
+
+Producer call-sites (M5-6) live next to the Cosmos write they're
+about, never inside the worker. The standard pattern is `await
+enqueue_notification(build_event(...), redis=redis)` inside a
+`contextlib.suppress` so notifier failure can never roll back the
+source-of-truth Cosmos write.
+
+Admin retry surfaces added after M5-8:
+- `POST /v1/admin/skills/{id}/classify` requeues stale or legacy
+  unclassified skills, including approved skills whose published status
+  must not change. The classifier worker preserves `status=approved` for
+  backfill and does not automatically re-enqueue Defender for those docs.
+- `POST /v1/admin/skills/{id}/defender-rescan` clears the old Defender
+  report, sets `defender_status=pending`, and requeues `queue:defender`.
+  Review queue rows include Defender status/report fields so admins can
+  inspect findings before deciding to approve, override, reject, or
+  quarantine.
+
 ---
 
 ## 6. Local-First Dev Loop
@@ -271,6 +342,8 @@ Keep route modules thin. Business logic lives in `services/`. Storage clients li
 ### Security
 - All secrets via env vars (12-factor). Production secrets in Azure Key Vault.
 - Never proxy bundle bytes through the app tier — use signed Blob URLs.
+  Catalog downloads and Get Skill prompts use 1-minute signed URLs; reopen
+  the dialog to mint a fresh capability.
 - Pre-publish secret scan runs as part of the publish job.
 
 ---
@@ -345,7 +418,7 @@ Local dev is unchanged — §6 still applies. `docker-compose up` + `make`
 is the contributor loop. Contributors do **not** need `kubectl`. AKS is a
 deploy target, not a development environment.
 
-### Four images, one git SHA
+### Six images, one git SHA
 
 | Image | Dockerfile | Workload |
 |-------|------------|----------|
@@ -353,8 +426,10 @@ deploy target, not a development environment.
 | `skillhub-backend`    | `Dockerfile.backend`    | FastAPI app. Serves all `/v1/*` routes + `/health`. Reads `RUNTIME_MODE=k8s` and dispatches curator runs via `backend/services/k8s_jobs.py`. |
 | `skillhub-classifier` | `Dockerfile.classifier` | `python -m backend.workers.classifier`. KEDA-scaled `0..N` on `LLEN queue:classifier`. Never API-spawned. |
 | `skillhub-curator`    | `Dockerfile.curator`    | `python -m backend.workers.curator_scheduler --once`. CronJob (`0 3 * * *`) + suspended `curator-ondemand` CronJob template cloned by the backend on `/v1/admin/curator/run`. |
+| `skillhub-defender`   | `Dockerfile.defender`   | `python -m backend.workers.defender`. KEDA-scaled on `LLEN queue:defender`; scans staged uploads and approved published bundles on rescan. |
+| `skillhub-notifier`   | `Dockerfile.notifier`   | `python -m backend.workers.notifier`. KEDA-scaled on `LLEN queue:notifications`; ACS email + Graph recipient lookup. |
 
-All four are tagged `{acrLoginServer}/skillhub-{component}:{git-sha}` by
+All six are tagged `{acrLoginServer}/skillhub-{component}:{git-sha}` by
 `deploy-aks.yml`. The git SHA flows into the chart as `image.tag` — never
 `latest` for production deploys.
 

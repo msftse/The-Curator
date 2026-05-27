@@ -1,0 +1,10 @@
+A new skill has been uploaded to the hub.
+
+Skill:       {skill_name}
+ID:          {skill_id}
+Version:     {version}
+Uploader:    {uploader}
+Uploaded at: {uploaded_at}
+
+The classifier and defender will run automatically. You'll get
+another email when it's ready for human review.

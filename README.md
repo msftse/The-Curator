@@ -1,12 +1,59 @@
-<div align="center">
-  <img src="docs/brand-icon.png" alt="Agentic Skill Hub" width="128" height="128" />
+<p align="center">
+  <img src="docs/assets/banner.webp" alt="The Curator — governed skills for agents" width="820" />
+</p>
 
-  # The Curator
+<h1 align="center">The Curator</h1>
 
-  Internal web platform for submitting, reviewing, publishing, and maintaining reusable agent skills.
-</div>
+<p align="center">
+  <b>Governed skills for agents.</b> A self-cleaning skill hub for agent harnesses —
+  classifies and rates every upload, scans for prompt injection, versions the approved
+  ones in an immutable catalog, and runs a weekly curator that prunes dead skills,
+  refines drift, and retags. Event-driven on Azure, scaled with KEDA, notifications
+  through ACS.
+</p>
 
-**Status:** M0 POC scaffolded. Local end-to-end flow runs on emulators (zero Azure spend).
+<p align="center">
+  <img src="https://img.shields.io/badge/status-M5-00ff88?style=flat-square" alt="status: M5" />
+  <img src="https://img.shields.io/badge/backend-FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI" />
+  <img src="https://img.shields.io/badge/frontend-Next.js%2014-000?style=flat-square&logo=nextdotjs" alt="Next.js" />
+  <img src="https://img.shields.io/badge/store-Cosmos%20DB-0078D4?style=flat-square&logo=microsoftazure&logoColor=white" alt="Cosmos DB" />
+  <img src="https://img.shields.io/badge/cache-Redis-DC382D?style=flat-square&logo=redis&logoColor=white" alt="Redis" />
+  <img src="https://img.shields.io/badge/scale-KEDA-326CE5?style=flat-square&logo=kubernetes&logoColor=white" alt="KEDA" />
+  <img src="https://img.shields.io/badge/license-internal-1f3a26?style=flat-square" alt="license" />
+</p>
+
+<p align="center">
+  <a href="docs/PRD.md"><b>📚 PRD</b></a> ·
+  <a href="docs/ARCHITECTURE.md"><b>🏗 Architecture</b></a> ·
+  <a href="AGENTS.md"><b>📐 Conventions</b></a> ·
+  <a href="docs/architecture.excalidraw"><b>🖼 Diagram</b></a> ·
+  <a href="scripts/smoke_m5.sh"><b>🧪 E2E smoke</b></a>
+</p>
+
+---
+
+# Why The Curator
+
+* 🧠 **Skill libraries rot.** Six months in, every harness fills with duplicates, stale prompts, deprecated APIs, and one bad skill silently overriding three good ones. Your agent gets dumber and nobody can explain why.
+* 🏷 **Classifier rates every upload.** Auto-tags, scores, and routes new skills through Microsoft Foundry. Quality signal before a human ever clicks review.
+* 🛡 **Defender gates approval.** LLM-based bundle scanner catches prompt injection and tainted content. Managers cannot approve while Defender is `pending`, `scanning`, or `failed`; clean scans approve normally, medium/high/critical flags require an audit-logged override or quarantine.
+* 📦 **Immutable catalog.** Approved skills are versioned in Cosmos and shipped as `published/{skill_id}/{version}/bundle.tar.gz`. Never overwritten, snapshotted before every curator pass.
+* 🧹 **Curator runs weekly.** Prunes dead skills (no loads in 30d → stale, 90d → archived), refines drift, retags. **Never deletes** without an immutable copy elsewhere. Pinned skills are immune.
+* 📣 **Notifier closes the loop.** Azure Communication Services email for every terminal event (upload, classify, defender clean/flagged, approve, reject, quarantine, override) plus a weekly admin report of what the curator did and why.
+* ⚙️ **Event-driven & scalable.** Storage queues + KEDA autoscale on classifier and defender workers. Reconciler keeps the K8s CronJob schedule in sync with the admin UI.
+* 🔒 **Never-delete invariant.** Two allowed delete callsites in the entire data plane (curator archive move + quarantine janitor expiry). Everything else is forbidden and the test suite enforces it via AST scan.
+
+
+**Status:** M5 in flight. M0–M4 complete; M5 ships the defender scanner, quarantine carve-out, notifier fan-out, and curator schedule UI. Local end-to-end flow runs on emulators (zero Azure spend).
+
+## What shipped in M5
+
+- 🛡 **Defender worker** (`backend/workers/defender.py`) — LLM-based bundle scanner running on Microsoft Foundry, writes `defender_status` / `defender_severity` / `defender_report` to Cosmos, blocks approval until scan completion, and supports admin-triggered rescans from the catalog detail page.
+- 🧯 **Quarantine carve-out** — `quarantine/` Blob container plus `POST /v1/admin/skills/{id}/quarantine` (mandatory justification). The ONE delete-after-N-days exception in the system; janitor (`backend/services/quarantine_janitor.py`) deletes expired bundles, never the Cosmos doc. Statically enforced by `backend/tests/unit/test_never_delete_invariant.py`.
+- 📣 **Notifier worker** (`backend/workers/notifier.py`) — Azure Communication Services email + Microsoft Graph admin-group resolution, Redis dedupe lock on `idempotency_key`, per-event templates. Eight producer call-sites wired (upload, classify, defender clean/flagged, approve/publish, reject, quarantine, override).
+- 🗓 **Curator schedule UI** — Cosmos-backed `system_state/curator_schedule` doc with `GET/PUT /v1/admin/curator/schedule`, an admin editor in the frontend, and a reconciler worker that annotates the K8s CronJob.
+- 🔁 **Admin retry controls** — review/catalog admins can requeue stuck classifier work (`Classify now`) and Defender scans (`Rescan defender`) without changing published status.
+- 🧪 **End-to-end smoke** — `scripts/smoke_m5.sh` brings up the docker compose stack and runs `backend/tests/e2e/test_m5_full_flow.py` against it.
 
 ## Docs
 
@@ -61,7 +108,7 @@ flowchart LR
     CS -->|run lock| RED
 
     A -.->|1.GET /v1/skills/id/download| API
-    API -.->|2. 302 → 15-min SAS URL| A
+    API -.->|2. 302 → 1-min SAS URL| A
     A ==>|3. GET signed URL → bytes| BLB
 
     classDef truth fill:#c5f6fa,stroke:#0b7285,color:#1e1e1e
@@ -123,9 +170,11 @@ pip install -e ".[dev]"
 # 4. Install frontend deps
 pnpm --filter frontend install   # or `cd frontend && pnpm install`
 
-# 5. Run in three terminals
+# 5. Run in separate terminals
 make api       # FastAPI on :8000
 make worker    # classifier worker
+make defender-worker   # Defender scanner worker
+make notifier-worker   # optional email notifier worker
 make web       # Next.js on :3000
 
 # 6. Seed a few sample skills (optional)
@@ -134,9 +183,15 @@ make seed
 
 Open <http://localhost:3000>, switch the user picker to `alice@org`, drag in
 `scripts/fixtures/example-skill.md` on the Upload page, watch the status flip
-from `pending → classified` within ~10s, switch to `manager@org`, approve from
-the Review queue, then `curl http://localhost:8000/v1/skills | jq` to see it
-in the public catalog.
+from `pending → classified`, then let Defender scan it. Switch to `admin@org`
+and approve from the Review queue only after Defender is `clean` (or override a
+flag with a justification). The Review queue shows Defender status, model, and
+findings inline. Use **Classify now** for stuck/unclassified skills and
+**Rescan defender** on catalog detail pages to refresh an old scan.
+
+The catalog's **Get skill** dialog mints a 1-minute signed Blob URL and embeds
+it directly in the copyable agent prompt so an agent can fetch the bundle
+without the app tier proxying bytes.
 
 ### Running against real Entra (oidc mode)
 
@@ -193,7 +248,7 @@ make demo
 Two-stage deployment by design:
 
 1. **`azd up`** provisions the Azure footprint (AKS + ACR + Cosmos + Redis + Storage + Key Vault + UAMIs + RBAC) from Bicep.
-2. **`scripts/helm-deploy-dev.sh`** builds the four images locally (or pulls them from ACR), then `helm upgrade`s the umbrella chart against the cluster.
+2. **`scripts/helm-deploy-dev.sh`** builds the six images locally (or pulls them from ACR), then `helm upgrade`s the umbrella chart against the cluster.
 
 This split exists because `azure.yaml` predates the move to AKS — `azd deploy` would try to push to App Service / Static Web App hosts that no longer exist. Use `azd` for the infra lifecycle; ship application changes via the helm script.
 
@@ -287,7 +342,7 @@ azd up                             # runs azd provision under the hood
 `azd up` will:
 - Create resource group `rg-<env>` if missing
 - Deploy `infra/main.bicep` with `parameters/<env>.bicepparam`
-- Provision ACR, AKS (Workload Identity + OIDC issuer), 5 UAMIs with federated credentials, Cosmos / Redis / Storage / Key Vault, all RBAC
+- Provision ACR, AKS (Workload Identity + OIDC issuer), component UAMIs with federated credentials, Cosmos / Redis / Storage / Key Vault, ACS, all RBAC
 
 Cosmos data-plane RBAC takes ~5min to propagate — `/health` will return 403 from Cosmos until then.
 
@@ -324,7 +379,7 @@ Two components are installed directly on the cluster (not via the umbrella chart
 ```bash
 az aks get-credentials -g rg-dev -n skillhub-dev-eastus2-aks --overwrite-existing
 
-# KEDA — drives the classifier worker to/from zero on `LLEN queue:classifier`.
+# KEDA — drives classifier/defender/notifier workers to/from zero from Redis LIST length.
 helm repo add kedacore https://kedacore.github.io/charts
 helm install keda kedacore/keda --namespace keda --create-namespace
 

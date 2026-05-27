@@ -144,6 +144,29 @@ class LLMProviderError(DomainError):
     http_status = status.HTTP_502_BAD_GATEWAY
 
 
+# ---- M5-3 — Quarantine flow ----
+
+
+class DefenderNotFlagged(DomainError):
+    """Admin tried to quarantine a skill whose defender_status is not `flagged`.
+
+    Quarantine is a *response* to a defender finding — never an arbitrary
+    delete. If defender_status is `clean`, `pending`, `scanning`, or `failed`
+    the operator must wait for (or re-trigger) the scan; admin reject is
+    the right tool for "this is bad and I don't need a scan to know".
+    """
+
+    error_code = "DEFENDER_NOT_FLAGGED"
+    http_status = status.HTTP_409_CONFLICT
+
+
+class JustificationRequired(DomainError):
+    """Caller omitted the required justification string or it was too short."""
+
+    error_code = "JUSTIFICATION_REQUIRED"
+    http_status = status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(DomainError)
     async def _domain_handler(_: Request, exc: DomainError) -> JSONResponse:

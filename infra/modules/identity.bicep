@@ -36,6 +36,11 @@ var components = [
   'classifier'
   'curator'
   'backend-k8s-jobs'
+  // M5 — defender (LLM-only skill scanner) + notifier (ACS + Graph) workers.
+  // Each gets its own UAMI federated to a SA of the same literal name in
+  // the `skillhub` namespace. RBAC grants live in rbac.bicep.
+  'defender'
+  'notifier'
 ]
 
 resource uamis 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = [for c in components: {
@@ -79,3 +84,11 @@ output curatorName string = uamis[3].name
 output backendK8sJobsPrincipalId string = uamis[4].properties.principalId
 output backendK8sJobsClientId string = uamis[4].properties.clientId
 output backendK8sJobsName string = uamis[4].name
+
+output defenderPrincipalId string = uamis[5].properties.principalId
+output defenderClientId string = uamis[5].properties.clientId
+output defenderName string = uamis[5].name
+
+output notifierPrincipalId string = uamis[6].properties.principalId
+output notifierClientId string = uamis[6].properties.clientId
+output notifierName string = uamis[6].name
