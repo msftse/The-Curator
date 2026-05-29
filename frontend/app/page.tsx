@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { HubAtAGlance } from "@/components/home/HubAtAGlance";
+import { SynapseCanvas } from "@/components/home/SynapseCanvas";
 
 export default function HomePage() {
   return (
@@ -41,6 +42,8 @@ function Hero() {
             "radial-gradient(circle at 22% 85%, rgba(245,197,66,0.14), transparent 38%)",
         }}
       />
+      {/* Synapse neural graph animation */}
+      <SynapseCanvas />
       {/* Vignette */}
       <div
         aria-hidden
@@ -79,32 +82,28 @@ function Hero() {
           className="rounded-full border border-cream-border bg-black/15 px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.25em] text-cream backdrop-blur"
           style={{ opacity: 0.85 }}
         >
-          Open source · v0.2
+          The Curator · Agentic Skill Hub
         </span>
 
         <h1 className="m-0 font-display text-[clamp(36px,7vw,72px)] font-bold leading-[1.05] tracking-ms-tight text-cream drop-shadow-[0_4px_30px_rgba(0,0,0,0.55)]">
-          A hub for{" "}
-          <span className="ms-accent-text">agent skills</span>
+          Where skills are{" "}
+          <span className="ms-accent-text">submitted, judged,</span>
           <br />
-          your team can trust.
+          and remembered.
         </h1>
 
         <Ornament />
 
         <p className="mx-auto max-w-[640px] text-[clamp(15px,1.6vw,19px)] leading-[1.55] text-cream-dim drop-shadow-[0_2px_14px_rgba(0,0,0,0.55)]">
-          Submit a SKILL.md bundle, watch the classifier run, have a manager
-          publish it to the catalog, then let the curator keep it healthy —
-          flagging stale skills, proposing fixes, and archiving (never deleting)
-          what nobody uses. Reviewed, audit-trailed, and security-vetted —
-          compatible with any agent runtime that consumes plain Markdown skills.
+          An internal platform for the lifecycle of agent skills — upload, classify, defend, publish, curate. Built for teams shipping real agent systems, not demos.
         </p>
 
         <div className="mt-2 flex flex-wrap items-center justify-center gap-3">
-          <Link href="/upload" className="ms-btn-cream">
-            Submit a skill &rarr;
+          <Link href="/catalog" className="ms-btn-cream">
+            Browse the catalog &rarr;
           </Link>
-          <Link href="/my-submissions" className="ms-btn-cream-ghost">
-            View my submissions
+          <Link href="/upload" className="ms-btn-cream-ghost">
+            Submit a skill
           </Link>
         </div>
 
