@@ -203,7 +203,7 @@ function Footer() {
           <ul className="flex flex-col gap-2 text-sm">
             <li>
               <a
-                href="https://github.com/anomalyco/opencode"
+                href="https://github.com/msftse/The-Curator"
                 className="text-cream-dim hover:text-cream hover:no-underline"
               >
                 GitHub
